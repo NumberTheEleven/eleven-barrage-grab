@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+// package 名使用简单的 'barrage' 而非 'eleven_barrage.v1'
+// 这样 tonic::include_proto!("barrage") 生成的模块路径是
+// `barrage_proto::barrage_service_server::...`（与代码中 import 一致）
+package barrage;
+
+// BarrageService — 下游消费者通过 gRPC 双向流订阅弹幕事件
+// 与 WS 通道共享同一份 BarrageEvent 业务 schema，编码格式不同
+service BarrageService {
+  // Subscribe: 客户端订阅指定房间的弹幕事件
+  // 服务端返回 stream<BarrageEvent>，每个事件包含完整字段
+  rpc Subscribe(SubscribeRequest) returns (stream BarrageEvent);
+
+  // Health: 健康检查（用于 readiness probe）
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message SubscribeRequest {
+  // 房间 ID（web_room_id）
+  string room_id = 1;
+
+  // 订阅的事件类型（空 = 全部）
+  repeated string event_types = 2;
+}
+
+message BarrageEvent {
+  // 事件类型字符串（与 msg.Method 一致）：
+  // - "WebcastChatMessage"
+  // - "WebcastGiftMessage"
+  // - "WebcastLikeMessage"
+  // - "WebcastMemberMessage"
+  // - "WebcastSocialMessage"
+  // - "WebcastControlMessage"
+  // - "WebcastRoomUserSeqMessage"
+  // - "WebcastFansclubMessage"
+  string event_type = 1;
+
+  // 事件时间戳（毫秒）
+  int64 timestamp_ms = 2;
+
+  // 事件消息 ID（用于去重）
+  int64 msg_id = 3;
+
+  // 事件 payload（对应 protobuf 消息的 JSON 表示）
+  // MVP 阶段为 JSON 字符串，保持编码一致
+  string payload_json = 4;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool healthy = 1;
+  string version = 2;
+  string uptime_secs = 3;
+}

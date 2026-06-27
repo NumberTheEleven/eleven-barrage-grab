@@ -1,0 +1,15 @@
+[package]
+name = "eleven-barrage-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Protobuf schema for Douyin barrage protocol"
+
+[dependencies]
+prost.workspace = true
+serde.workspace = true
+
+[build-dependencies]
+prost-build = "0.12"
+serde = { version = "1.0", features = ["derive"] }

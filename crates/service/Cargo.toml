@@ -1,0 +1,43 @@
+[package]
+name = "eleven-barrage-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Main service daemon: wss connection, event router, WS/gRPC output"
+
+[[bin]]
+name = "eleven-barrage-grab"
+path = "src/main.rs"
+
+[dependencies]
+eleven-barrage-proto.workspace = true
+eleven-barrage-core.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tokio-stream.workspace = true
+async-stream.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+tokio-tungstenite.workspace = true
+tonic.workspace = true
+prost.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+toml.workspace = true
+parking_lot.workspace = true
+bytes.workspace = true
+clap.workspace = true
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

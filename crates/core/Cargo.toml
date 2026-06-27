@@ -1,0 +1,25 @@
+[package]
+name = "eleven-barrage-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Core decoding/dispatch/filter/dedup logic for Douyin barrage"
+
+[dependencies]
+eleven-barrage-proto.workspace = true
+prost.workspace = true
+tokio.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+bytes.workspace = true
+flate2.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

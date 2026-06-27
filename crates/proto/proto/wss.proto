@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package wss.v1;
+
+// WssResponse: 外层 WebSocket 帧解码后的 protobuf 结构
+// 来源：原 DouyinBarrageGrab/BarrageGrab/proto/wss.proto
+// 注：抖音协议的 WSS 帧由 gzip 压缩，压缩标志在 wss_headers["compress_type"] == "gzip" 时触发
+message WssResponse {
+  uint64 seqid = 1;
+  uint64 logid = 2;
+  uint64 service = 3;
+  uint64 method = 4;
+  map<string, string> headers = 5;
+  string payload_encoding = 6;
+  string payload_type = 7;
+  bytes payload = 8;
+}

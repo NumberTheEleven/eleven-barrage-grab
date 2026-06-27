@@ -1,0 +1,17 @@
+[package]
+name = "eleven-barrage-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "CLI entry point (thin wrapper around eleven-barrage-service)"
+
+[[bin]]
+name = "ebg"
+path = "src/main.rs"
+
+[dependencies]
+eleven-barrage-service = { path = "../service" }
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
