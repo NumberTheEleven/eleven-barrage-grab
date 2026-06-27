@@ -5,8 +5,7 @@
 mod fixtures;
 
 use eleven_barrage_core::{
-    BarrageEvent, Dispatcher, EventFilter, MsgDedup, SessionFaultDetector, SessionFaultReason,
-    WssDecoder,
+    BarrageEvent, Dispatcher, EventFilter, MsgDedup, SessionFaultDetector, WssDecoder,
 };
 
 #[test]
