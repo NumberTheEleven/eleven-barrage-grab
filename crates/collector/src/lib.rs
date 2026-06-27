@@ -71,6 +71,10 @@ mod system_time_serde {
 pub mod error;
 pub use error::SignatureError;
 
+/// URL 解析器（auto-sign-fetcher R-001）
+pub mod url_parser;
+pub use url_parser::{parse as parse_url, WebRid};
+
 /// Collector trait — MVP 仅占位
 #[async_trait::async_trait]
 pub trait Collector: Send + Sync {
