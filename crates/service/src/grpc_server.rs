@@ -19,19 +19,18 @@ use tokio::sync::mpsc;
 use tokio_stream::Stream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
-use tracing::{error, info, warn};
+use tracing::info;
 
 use eleven_barrage_core::BarrageEvent;
 
 // 引入 tonic-build 生成的代码
-pub mod barrage_proto {
+// .proto 的 package = "barrage"，所以生成模块名为 `barrage`
+pub mod barrage {
     tonic::include_proto!("barrage");
 }
 
-use barrage_proto::{
-    barrage_service_server::{BarrageService, BarrageServiceServer},
-    BarrageEvent as GrpcBarrageEvent, HealthRequest, HealthResponse, SubscribeRequest,
-};
+use barrage::barrage_service_server::{BarrageService, BarrageServiceServer};
+use barrage::{BarrageEvent as GrpcBarrageEvent, HealthRequest, HealthResponse, SubscribeRequest};
 
 /// gRPC 服务实现
 pub struct BarrageServiceImpl {

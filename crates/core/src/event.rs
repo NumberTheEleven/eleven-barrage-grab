@@ -17,6 +17,24 @@ use eleven_barrage_proto as proto;
 ///
 /// 与原项目 `WssBarrageGrab.OnChatMessage/OnLikeMessage/OnGiftMessage/...`
 /// 多个独立事件处理器相比，统一为单个枚举便于多路复用。
+///
+/// # MVP 行为
+///
+/// MVP 阶段通过 `EventFilter` 过滤，只推送 Chat/Gift/Like 三种。
+/// Member/Social/Control/RoomUserSeq/Fansclub 仍保留 schema，可用于：
+/// - 内部调试
+/// - 通过 BarrageEvent::method() 路由
+/// - 后续扩展事件类型（不破坏现有 API）
+///
+/// # 序列化
+///
+/// `#[serde(tag = "event_type", content = "data")]` 让 JSON 形如：
+/// ```json
+/// {
+///   "event_type": "ChatMessage",
+///   "data": { "content": "hello", ... }
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data")]
 pub enum BarrageEvent {
@@ -27,17 +45,13 @@ pub enum BarrageEvent {
     /// 点赞消息（MVP 推送）
     LikeMessage(LikeMessage),
 
-    /// 以下 5 种 schema 保留但不推送（架构预留）
-    /// 不在 `#[serde(...)]` 标记为默认覆盖，避免 JSON 编码时遗漏字段
-    #[serde(skip)]
+    /// 以下 5 种 schema 保留（通过 EventFilter 过滤，默认不推送）
+    /// 注：serde 不允许在 tuple variant 上用 `#[serde(skip)]`（必须是 unit variant），
+    ///     因此所有 8 种类型都正常序列化。过滤由 EventFilter 在管线层面处理。
     MemberMessage(MemberMessage),
-    #[serde(skip)]
     SocialMessage(SocialMessage),
-    #[serde(skip)]
     ControlMessage(ControlMessage),
-    #[serde(skip)]
     RoomUserSeqMessage(RoomUserSeqMessage),
-    #[serde(skip)]
     FansclubMessage(FansclubMessage),
 }
 
