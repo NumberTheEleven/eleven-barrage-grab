@@ -2,13 +2,15 @@
 //!
 //! 子命令：
 //! - `start` (默认) — 启动 service（沿用 custom-barrage 行为）
-//! - `grab` — 自动签名模式：用户提供 URL，服务自动完成签名（R-007）
+//! - `grab` — 自动签名模式：用户提供 URL，服务自动完成签名并连接 WSS（R-007 / R-005）
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use tracing::error;
+use futures::{SinkExt, StreamExt};
+use tracing::{error, info};
 
 #[derive(Parser)]
 #[command(name = "ebg", about = "eleven-barrage-grab CLI")]
@@ -22,9 +24,10 @@ enum EbgCommand {
     /// 启动 service daemon（沿用 custom-barrage 行为）
     Start,
 
-    /// 自动签名并获取弹幕流（R-007）
+    /// 自动签名并获取弹幕流（R-007 / R-005）
     ///
-    /// 用户提供抖音直播间 URL，服务自动调用 room_info + im_fetch 拿到签名后的 wss URL。
+    /// 用户提供抖音直播间 URL，服务自动调用 room_info + im_fetch 拿到签名后的 wss URL，
+    /// 然后直接连接 WSS 并输出弹幕事件。
     Grab {
         /// 抖音直播间 URL（如 https://live.douyin.com/664637748606）
         #[arg(long)]
@@ -50,7 +53,6 @@ async fn main() -> ExitCode {
 
     match cli.command {
         None | Some(EbgCommand::Start) => {
-            // 默认行为：启动 service
             if let Err(e) = eleven_barrage_service::run().await {
                 error!(error = %e, "service run failed");
                 return ExitCode::FAILURE;
@@ -61,11 +63,10 @@ async fn main() -> ExitCode {
             url,
             cookie_file,
             grpc_addr,
-            verbose: _,
-        }) => match run_grab(&url, cookie_file.as_ref(), &grpc_addr).await {
+            verbose,
+        }) => match run_grab(&url, cookie_file.as_ref(), &grpc_addr, verbose).await {
             Ok(_) => ExitCode::SUCCESS,
             Err(e) => {
-                // 结构化错误输出（参考 design.md 5）
                 eprintln!("Error: signature error");
                 eprintln!("  code: {}", e.code());
                 eprintln!("  retryable: {}", e.retryable());
@@ -76,25 +77,156 @@ async fn main() -> ExitCode {
     }
 }
 
-/// ebg grab 实现：调 gRPC ProvideSignedWss
+/// ebg grab 实现：调 gRPC ProvideSignedWss，然后连接 WSS 并输出弹幕
 async fn run_grab(
     url: &str,
+    cookie_file: Option<&PathBuf>,
+    grpc_addr: &str,
+    verbose: bool,
+) -> Result<(), eleven_barrage_collector::SignatureError> {
+    // 1. URL 解析（本地快速失败）
+    let _web_rid = eleven_barrage_collector::parse_url(url)?;
+    info!(web_rid = %_web_rid, "URL parsed");
+
+    // 2. 调 gRPC ProvideSignedWss
+    let material = call_provide_signed_wss(grpc_addr, url, cookie_file).await?;
+
+    info!(wss_url = %material.url, "signed wss material received");
+
+    // 3. 连接 WSS 并输出弹幕
+    if let Err(e) = connect_and_print(&material, verbose).await {
+        return Err(eleven_barrage_collector::SignatureError::NetworkTransient {
+            reason: format!("wss connection failed: {}", e),
+        });
+    }
+
+    Ok(())
+}
+
+/// gRPC 调用 ProvideSignedWss
+async fn call_provide_signed_wss(
+    grpc_addr: &str,
+    url: &str,
     _cookie_file: Option<&PathBuf>,
-    _grpc_addr: &str,
 ) -> Result<eleven_barrage_collector::SignedWssMaterial, eleven_barrage_collector::SignatureError> {
-    // 本次实现只验证 URL 解析 + AutoSigner 链路
-    // 实际 gRPC 客户端调用留给后续 T-008 集成（与 service 一起部署）
-    //
-    // MVP 阶段：直接调 collector 的 parse_url + 通过 service 进程内部 AutoSigner
-    // 完整方案：起本地 service，gRPC 调 ProvideSignedWss
+    use eleven_barrage_service::signed_proto::signed_barrage_service_client::SignedBarrageServiceClient;
+    use eleven_barrage_service::signed_proto::ProvideSignedWssRequest;
 
-    use eleven_barrage_collector::parse_url;
-    let web_rid = parse_url(url)?;
+    let mut client = SignedBarrageServiceClient::connect(grpc_addr.to_string())
+        .await
+        .map_err(|e| eleven_barrage_collector::SignatureError::NetworkTransient {
+            reason: format!("grpc connect failed: {}", e),
+        })?;
 
-    tracing::info!(web_rid = %web_rid, "URL parsed");
+    let request = ProvideSignedWssRequest {
+        url: Some(url.to_string()),
+        cookie_file: _cookie_file.map(|p| p.to_string_lossy().to_string()),
+    };
 
-    // 占位返回（实际由 gRPC client 拿）
-    Err(eleven_barrage_collector::SignatureError::AlgorithmChanged)
+    let response = client
+        .provide_signed_wss(tonic::Request::new(request))
+        .await
+        .map_err(|e| eleven_barrage_collector::SignatureError::NetworkTransient {
+            reason: format!("grpc call failed: {}", e),
+        })?;
+
+    let inner = response.into_inner();
+    match inner.result {
+        Some(eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Material(m)) => {
+            Ok(eleven_barrage_collector::SignedWssMaterial {
+                url: m.url,
+                headers: m.headers.into_iter().collect(),
+                expires_at: std::time::SystemTime::UNIX_EPOCH
+                    + Duration::from_secs(m.expires_at_unix as u64),
+            })
+        }
+        Some(eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Error(err)) => {
+            Err(map_proto_error(err))
+        }
+        None => Err(eleven_barrage_collector::SignatureError::AlgorithmChanged),
+    }
+}
+
+/// proto SignatureErrorInfo → collector SignatureError
+fn map_proto_error(
+    err: eleven_barrage_service::signed_proto::SignatureErrorInfo,
+) -> eleven_barrage_collector::SignatureError {
+    use eleven_barrage_service::signed_proto::signature_error_info::Code;
+    let code = Code::try_from(err.code).unwrap_or(Code::Unknown);
+    match code {
+        Code::UrlFormatNotSupported => eleven_barrage_collector::SignatureError::UrlFormatNotSupported {
+            url: err.message,
+        },
+        Code::EmptyUrl => eleven_barrage_collector::SignatureError::EmptyUrl,
+        Code::ConfigMissing => eleven_barrage_collector::SignatureError::ConfigMissing {
+            field: err.message,
+        },
+        Code::CookieExpired => eleven_barrage_collector::SignatureError::CookieExpired,
+        Code::AlgorithmChanged => eleven_barrage_collector::SignatureError::AlgorithmChanged,
+        Code::RoomNotFound => eleven_barrage_collector::SignatureError::RoomNotFound {
+            web_rid: err.message,
+        },
+        Code::NetworkTransient => eleven_barrage_collector::SignatureError::NetworkTransient {
+            reason: err.message,
+        },
+        Code::Unknown => eleven_barrage_collector::SignatureError::AlgorithmChanged,
+    }
+}
+
+/// 用签名后的 material 连接 WSS，并打印弹幕事件
+async fn connect_and_print(
+    material: &eleven_barrage_collector::SignedWssMaterial,
+    verbose: bool,
+) -> anyhow::Result<()> {
+    use tokio_tungstenite::tungstenite::http::Request;
+
+    let mut request_builder = Request::builder().method("GET").uri(&material.url);
+    for (key, value) in &material.headers {
+        request_builder = request_builder.header(key.as_str(), value.as_str());
+    }
+    let request = request_builder.body(()).expect("build wss request");
+
+    let (ws_stream, response) = tokio_tungstenite::connect_async(request).await?;
+    info!(status = ?response.status(), "wss connected");
+
+    let (mut write, mut read) = ws_stream.split();
+    let decoder = eleven_barrage_core::WssDecoder::new();
+    let dispatcher = eleven_barrage_core::Dispatcher::new();
+
+    while let Some(msg) = read.next().await {
+        match msg? {
+            tokio_tungstenite::tungstenite::Message::Binary(frame) => {
+                let decode_result = decoder.decode(&frame, false);
+                match decode_result {
+                    Ok((wss_response, inner_response)) => {
+                        let events = dispatcher.dispatch(&wss_response, &inner_response)?;
+                        for event in events {
+                            if verbose {
+                                println!("{:#?}", event);
+                            } else {
+                                println!("{}: {}", event.method(), event.msg_id());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if verbose {
+                            eprintln!("decode error: {}", e);
+                        }
+                    }
+                }
+            }
+            tokio_tungstenite::tungstenite::Message::Close(_) => {
+                info!("wss closed by server");
+                break;
+            }
+            tokio_tungstenite::tungstenite::Message::Ping(data) => {
+                write.send(tokio_tungstenite::tungstenite::Message::Pong(data)).await?;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -150,32 +282,39 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[tokio::test]
-    async fn run_grab_invalid_url_returns_structured_error() {
-        let result = run_grab("https://v.douyin.com/abc", None, "http://127.0.0.1:50051").await;
-        match result {
-            Err(err) => {
-                assert_eq!(err.code(), "URL_FORMAT_NOT_SUPPORTED");
-                assert!(!err.retryable());
-            }
-            Ok(_) => panic!("expected error"),
-        }
+    #[test]
+    fn map_proto_error_url_format() {
+        let err = eleven_barrage_service::signed_proto::SignatureErrorInfo {
+            code: eleven_barrage_service::signed_proto::signature_error_info::Code::UrlFormatNotSupported as i32,
+            retryable: false,
+            message: "bad url".to_string(),
+        };
+        let mapped = map_proto_error(err);
+        assert_eq!(mapped.code(), "URL_FORMAT_NOT_SUPPORTED");
+        assert!(!mapped.retryable());
     }
 
-    #[tokio::test]
-    async fn run_grab_valid_url_returns_placeholder_error() {
-        // 当前实现返回 AlgorithmChanged 作为占位（实际 gRPC 客户端留给后续集成）
-        let result = run_grab(
-            "https://live.douyin.com/664637748606",
-            None,
-            "http://127.0.0.1:50051",
-        )
-        .await;
-        match result {
-            Err(err) => {
-                assert_eq!(err.code(), "ALGORITHM_CHANGED");
-            }
-            Ok(_) => panic!("expected placeholder error"),
-        }
+    #[test]
+    fn map_proto_error_cookie_expired() {
+        let err = eleven_barrage_service::signed_proto::SignatureErrorInfo {
+            code: eleven_barrage_service::signed_proto::signature_error_info::Code::CookieExpired as i32,
+            retryable: false,
+            message: "cookie expired".to_string(),
+        };
+        let mapped = map_proto_error(err);
+        assert_eq!(mapped.code(), "COOKIE_EXPIRED");
+        assert!(!mapped.retryable());
+    }
+
+    #[test]
+    fn map_proto_error_network_transient() {
+        let err = eleven_barrage_service::signed_proto::SignatureErrorInfo {
+            code: eleven_barrage_service::signed_proto::signature_error_info::Code::NetworkTransient as i32,
+            retryable: true,
+            message: "timeout".to_string(),
+        };
+        let mapped = map_proto_error(err);
+        assert_eq!(mapped.code(), "NETWORK_TRANSIENT");
+        assert!(mapped.retryable());
     }
 }

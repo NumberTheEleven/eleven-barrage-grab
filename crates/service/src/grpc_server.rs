@@ -128,26 +128,34 @@ fn convert_barrage_event_to_grpc(event: CoreBarrageEvent) -> GrpcBarrageEvent {
     }
 }
 
-/// 运行 gRPC 服务端
-pub async fn run_grpc_server(addr: SocketAddr) -> Result<()> {
-    info!(addr = %addr, "gRPC server starting");
+/// 运行 gRPC 服务端（带上游事件源 + AutoSigner）
+pub async fn run_grpc_server_with_source_and_signer(
+    addr: SocketAddr,
+    event_source: mpsc::Receiver<CoreBarrageEvent>,
+    signer: Option<crate::AutoSigner>,
+) -> Result<()> {
+    info!(addr = %addr, "gRPC server starting (with upstream source + signer)");
 
-    // 创建 dummy event source（MVP 阶段每个客户端连接都拿到一份，
-    // 实际生产应使用 broadcast channel 共享给所有 gRPC 客户端）
-    let (tx, rx) = mpsc::channel::<CoreBarrageEvent>(1024);
-    drop(tx); // 没有上游事件源时立即关闭
+    let barrage_service = BarrageServiceImpl::new(event_source);
+    let server = Server::builder().add_service(BarrageServiceServer::new(barrage_service));
 
-    let service = BarrageServiceImpl::new(rx);
+    let server = if let Some(signer) = signer {
+        let signed_service = crate::SignedBarrageServiceImpl::new(signer);
+        server.add_service(signed_service.into_server())
+    } else {
+        server
+    };
 
-    let server = Server::builder()
-        .add_service(BarrageServiceServer::new(service))
-        .serve(addr);
-
-    info!(addr = %addr, "gRPC server listening");
-
-    server.await.context("gRPC server error")?;
+    server.serve(addr).await.context("gRPC server error")?;
 
     Ok(())
+}
+
+/// 运行 gRPC 服务端（旧接口，不带 signer，保持向后兼容）
+pub async fn run_grpc_server(addr: SocketAddr) -> Result<()> {
+    let (tx, rx) = mpsc::channel::<CoreBarrageEvent>(1024);
+    drop(tx);
+    run_grpc_server_with_source_and_signer(addr, rx, None).await
 }
 
 /// 运行 gRPC 服务端（带上游事件源）
@@ -155,17 +163,7 @@ pub async fn run_grpc_server_with_source(
     addr: SocketAddr,
     event_source: mpsc::Receiver<CoreBarrageEvent>,
 ) -> Result<()> {
-    info!(addr = %addr, "gRPC server starting (with upstream source)");
-
-    let service = BarrageServiceImpl::new(event_source);
-
-    Server::builder()
-        .add_service(BarrageServiceServer::new(service))
-        .serve(addr)
-        .await
-        .context("gRPC server error")?;
-
-    Ok(())
+    run_grpc_server_with_source_and_signer(addr, event_source, None).await
 }
 
 #[cfg(test)]
