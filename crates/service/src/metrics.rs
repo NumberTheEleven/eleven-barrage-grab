@@ -25,12 +25,14 @@ pub struct MetricsExporter {
 impl MetricsExporter {
     /// 初始化 Prometheus exporter 并绑定到 metrics_listen_addr
     pub fn install(config: &ServiceConfig) -> Result<Self> {
-        let builder = PrometheusBuilder::new()
-            .with_http_listener(config.metrics_listen_addr)
-            .set_buckets_for_metric(
-                Matcher::Full("barrage_processing_duration_seconds".to_string()),
-                &[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
-            );
+        // 注意：set_buckets_for_metric 在 0.14 中签名是 `&mut self -> &mut Self`
+        // 不能链式调用，必须用 mutable 变量
+        let mut builder = PrometheusBuilder::new()
+            .with_http_listener(config.metrics_listen_addr);
+        builder.set_buckets_for_metric(
+            Matcher::Full("barrage_processing_duration_seconds".to_string()),
+            &[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
+        );
 
         let handle = builder
             .install_recorder()
@@ -42,7 +44,7 @@ impl MetricsExporter {
         );
 
         Ok(Self {
-            // 注意：install_recorder 内部会启动后台 listener，
+            // install_recorder 内部启动后台 listener，
             // 我们只需要 handle 来渲染 metrics，builder 已被消费
             _builder: None,
             handle,
