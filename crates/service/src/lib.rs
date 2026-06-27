@@ -9,6 +9,7 @@
 //! - [`room`]：单/多房间管理器
 //! - [`ws_server`]：WS 下游服务端
 //! - [`watchdog`]：后台健康监控
+//! - [`signer`]：AutoSigner（auto-sign-fetcher 组合 RoomApi + ImFetcher）
 
 pub mod api;
 pub mod config;
@@ -17,6 +18,7 @@ pub mod logging;
 pub mod metrics;
 pub mod room;
 pub mod run;
+pub mod signer;
 pub mod watchdog;
 pub mod ws_server;
 pub mod wss;
@@ -27,6 +29,7 @@ pub use logging::init as init_logging;
 pub use metrics::{MetricsExporter, WssState};
 pub use room::{RoomManager, SingleRoomManager};
 pub use run::run;
+pub use signer::AutoSigner;
 pub use watchdog::Watchdog;
 pub use ws_server::{EventDispatcher, WsServer};
 pub use wss::WssConnectionManager;
