@@ -146,11 +146,10 @@ impl WssConnectionManager {
             );
         }
 
-        // 构建 request
-        let mut request_builder =
-            tokio_tungstenite::tungstenite::client::ClientRequest::builder()
-                .method("GET")
-                .uri(&self.config.url);
+        // 构建 request（tungstenite 0.23 的 Request 类型 = http::Request<()>）
+        let mut request_builder = tokio_tungstenite::tungstenite::http::Request::builder()
+            .method("GET")
+            .uri(&self.config.url);
 
         for (key, value) in &self.config.headers {
             request_builder = request_builder
@@ -159,7 +158,7 @@ impl WssConnectionManager {
         }
 
         let request = request_builder
-            .build()
+            .body(())
             .context("failed to build wss request")?;
 
         let (ws_stream, response) = connect_async(request)
@@ -315,7 +314,7 @@ impl WssConnectionManager {
             loop {
                 ticker.tick().await;
 
-                let ping = Message::Ping(Vec::new().into());
+                let ping = Message::Ping(Vec::new());
                 match write.send(ping).await {
                     Ok(()) => {
                         record::heartbeat_success(&room_id);

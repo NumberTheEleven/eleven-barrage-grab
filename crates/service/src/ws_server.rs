@@ -78,16 +78,8 @@ pub struct EventDispatcher {
 }
 
 impl EventDispatcher {
-    /// 将 BarrageEvent 推送给所有客户端
+    /// 将 BarrageEvent 推送给所有客户端（JSON 序列化在 `handle_client` 中完成）
     pub async fn dispatch(&self, event: BarrageEvent) {
-        let json = match serde_json::to_string(&event) {
-            Ok(j) => j,
-            Err(e) => {
-                error!(error = %e, "failed to serialize BarrageEvent");
-                return;
-            }
-        };
-
         let mut clients = self.clients.lock();
         let mut disconnected = Vec::new();
 
@@ -113,9 +105,6 @@ impl EventDispatcher {
         for &idx in disconnected.iter().rev() {
             clients.remove(idx);
         }
-
-        // 计算 JSON 一次（避免重复序列化）
-        let _ = json; // 当前简化实现
     }
 
     /// 创建独立 mpsc 通道（用于接收上游事件）

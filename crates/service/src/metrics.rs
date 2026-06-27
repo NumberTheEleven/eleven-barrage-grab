@@ -16,9 +16,9 @@ use crate::config::ServiceConfig;
 
 /// Prometheus exporter handle
 pub struct MetricsExporter {
-    /// `PrometheusBuilder` 在 drop 时自动停止 exporter
-    _builder: PrometheusBuilder,
-    /// 用于 shutdown 的本地 handle
+    /// 保留 builder 用于潜在的 shutdown 控制（实际由 install_recorder 管理生命周期）
+    _builder: Option<PrometheusBuilder>,
+    /// 用于渲染 Prometheus exposition format
     handle: metrics_exporter_prometheus::PrometheusHandle,
 }
 
@@ -30,8 +30,7 @@ impl MetricsExporter {
             .set_buckets_for_metric(
                 Matcher::Full("barrage_processing_duration_seconds".to_string()),
                 &[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
-            )
-            .with_context(|| format!("failed to setup Prometheus on {}", config.metrics_listen_addr))?;
+            );
 
         let handle = builder
             .install_recorder()
@@ -43,7 +42,9 @@ impl MetricsExporter {
         );
 
         Ok(Self {
-            _builder: builder,
+            // 注意：install_recorder 内部会启动后台 listener，
+            // 我们只需要 handle 来渲染 metrics，builder 已被消费
+            _builder: None,
             handle,
         })
     }
