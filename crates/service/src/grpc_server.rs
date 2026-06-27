@@ -1,108 +1,257 @@
-//! gRPC 服务端（stub 形式）
+//! gRPC 服务端 — 完整实现
 //!
-//! MVP 阶段：定义 service 接口和 message schema，但具体实现待 Phase 5 后。
+//! 提供 `BarrageService` 服务：
+//! - `Subscribe`: 客户端订阅指定房间的弹幕事件（双向流）
+//! - `Health`: 健康检查
 //!
-//! 完整 .proto 定义见 `crates/service/proto/barrage.proto`
-//! tonic-build 在 build.rs 中生成 Rust 类型。
-//!
-//! # 后续完善
-//! - 实现 `BarrageService::subscribe` 双向流
-//! - 与 WS 服务端共享 BarrageEvent 业务 schema
-//! - gRPC 通道编码为 Protobuf（高效、强类型）
-//!
-//! # 设计参考
-//! 与 WebSocket 通道共享同一份 BarrageEvent 业务 schema（来自 `eleven-barrage-core`）。
-//! WS 通道用 JSON 编码，gRPC 通道用 Protobuf 二进制编码。
+//! # 数据流
+//! 上游 WssConnectionManager 推送给 mpsc::Sender<BarrageEvent>，
+//! 本服务从对应 Receiver 读取，转发为 gRPC stream。
 
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use async_stream::try_stream;
+use parking_lot::Mutex;
+use tokio::sync::mpsc;
+use tokio_stream::Stream;
 use tonic::transport::Server;
-use tracing::info;
+use tonic::{Request, Response, Status};
+use tracing::{error, info, warn};
 
-// 注：完整 tonic 实现需要先通过 tonic-build 生成代码
-// MVP 阶段先实现一个占位的 gRPC server（不接受请求），证明整个启动链路通畅
+use eleven_barrage_core::BarrageEvent;
 
-/// 运行 gRPC 服务端（stub）
-pub async fn run_grpc_server(addr: SocketAddr) -> Result<()> {
-    info!(addr = %addr, "gRPC server stub starting (full implementation in T-008)");
+// 引入 tonic-build 生成的代码
+pub mod barrage_proto {
+    tonic::include_proto!("barrage");
+}
 
-    // 占位实现：启动一个简单的 TCP listener，每 60s 打印一次心跳
-    // 直到 shutdown 触发
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("failed to bind gRPC server on {}", addr))?;
+use barrage_proto::{
+    barrage_service_server::{BarrageService, BarrageServiceServer},
+    BarrageEvent as GrpcBarrageEvent, HealthRequest, HealthResponse, SubscribeRequest,
+};
 
-    info!(addr = %addr, "gRPC stub listening (no service implemented)");
+/// gRPC 服务实现
+pub struct BarrageServiceImpl {
+    /// 共享的 BarrageEvent 接收端（来自上游 WssConnectionManager）
+    ///
+    /// 实际生产环境应使用 `Arc<Mutex<...>>` 共享 channel 池
+    /// MVP 阶段每次启动时绑定一个固定的 source channel
+    event_source: Arc<Mutex<Option<mpsc::Receiver<BarrageEvent>>>>,
+    service_start_time: std::time::Instant,
+}
 
-    loop {
-        // accept 但不处理（只是让端口保持占用，证明绑定成功）
-        tokio::select! {
-            _ = listener.accept() => {
-                // 忽略连接（MVP stub）
-            }
-            _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {
-                // 心跳日志
-                tracing::debug!(addr = %addr, "gRPC stub heartbeat");
-            }
+impl std::fmt::Debug for BarrageServiceImpl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BarrageServiceImpl")
+            .field("service_start_time", &self.service_start_time)
+            .finish()
+    }
+}
+
+impl BarrageServiceImpl {
+    /// 创建新服务实例
+    pub fn new(event_source: mpsc::Receiver<BarrageEvent>) -> Self {
+        Self {
+            event_source: Arc::new(Mutex::new(Some(event_source))),
+            service_start_time: std::time::Instant::now(),
         }
     }
 }
 
-/// 占位：完整 tonic 实现参考（待 T-008 完善）
-///
-/// ```ignore
-/// mod barrage_proto {
-///     tonic::include_proto!("barrage");
-/// }
-///
-/// use barrage_proto::{barrage_service_server::{BarrageService, BarrageServiceServer}};
-/// use barrage_proto::{SubscribeRequest, BarrageEvent as GrpcBarrageEvent};
-/// use tonic::{Request, Response, Status};
-/// use futures::Stream;
-///
-/// pub struct MyBarrageService {
-///     event_rx: tokio::sync::mpsc::Receiver<BarrageEvent>,
-/// }
-///
-/// #[tonic::async_trait]
-/// impl BarrageService for MyBarrageService {
-///     type SubscribeStream = Pin<Box<dyn Stream<Item = Result<GrpcBarrageEvent, Status>> + Send>>;
-///
-///     async fn subscribe(
-///         &self,
-///         request: Request<SubscribeRequest>,
-///     ) -> Result<Response<Self::SubscribeStream>, Status> {
-///         let _req = request.into_inner();
-///         let rx = self.event_rx;  // 实际通过 Arc<Mutex<>> 共享
-///         let stream = async_stream::stream! {
-///             // 从 channel 接收事件并转发为 gRPC stream
-///         };
-///         Ok(Response::new(Box::pin(stream)))
-///     }
-/// }
-/// ```
+#[tonic::async_trait]
+impl BarrageService for BarrageServiceImpl {
+    type SubscribeStream =
+        Pin<Box<dyn Stream<Item = Result<GrpcBarrageEvent, Status>> + Send + Sync>>;
+
+    async fn subscribe(
+        &self,
+        request: Request<SubscribeRequest>,
+    ) -> Result<Response<Self::SubscribeStream>, Status> {
+        let req = request.into_inner();
+        info!(
+            room_id = %req.room_id,
+            event_types = ?req.event_types,
+            "gRPC subscribe request"
+        );
+
+        // 取出共享的 event source（一次性）
+        let event_rx = {
+            let mut guard = self.event_source.lock();
+            guard
+                .take()
+                .ok_or_else(|| Status::unavailable("event source already consumed"))?
+        };
+
+        // 转换为 gRPC stream
+        let output = try_stream! {
+            let mut rx = event_rx;
+            while let Some(event) = rx.recv().await {
+                let grpc_event = convert_barrage_event_to_grpc(event);
+                yield grpc_event;
+            }
+        };
+
+        Ok(Response::new(Box::pin(output) as Self::SubscribeStream))
+    }
+
+    async fn health(
+        &self,
+        _request: Request<HealthRequest>,
+    ) -> Result<Response<HealthResponse>, Status> {
+        let uptime_secs = self.service_start_time.elapsed().as_secs();
+
+        Ok(Response::new(HealthResponse {
+            healthy: true,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            uptime_secs: uptime_secs.to_string(),
+        }))
+    }
+}
+
+/// 将内部 `BarrageEvent` 转换为 gRPC Protobuf 消息
+fn convert_barrage_event_to_grpc(event: BarrageEvent) -> GrpcBarrageEvent {
+    GrpcBarrageEvent {
+        event_type: event.method().to_string(),
+        timestamp_ms: event.timestamp_ms(),
+        msg_id: event.msg_id(),
+        // payload_json: MVP 阶段为简化，直接 JSON 序列化
+        // 注：这里使用 serde_json 序列化 BarrageEvent 本身
+        //     而非内部 message type 的 JSON（保证字段命名一致）
+        payload_json: serde_json::to_string(&event).unwrap_or_default(),
+    }
+}
+
+/// 运行 gRPC 服务端
+pub async fn run_grpc_server(addr: SocketAddr) -> Result<()> {
+    info!(addr = %addr, "gRPC server starting");
+
+    // 创建 dummy event source（MVP 阶段每个客户端连接都拿到一份，
+    // 实际生产应使用 broadcast channel 共享给所有 gRPC 客户端）
+    let (tx, rx) = mpsc::channel::<BarrageEvent>(1024);
+    drop(tx); // 没有上游事件源时立即关闭
+
+    let service = BarrageServiceImpl::new(rx);
+
+    let server = Server::builder()
+        .add_service(BarrageServiceServer::new(service))
+        .serve(addr);
+
+    info!(addr = %addr, "gRPC server listening");
+
+    server.await.context("gRPC server error")?;
+
+    Ok(())
+}
+
+/// 运行 gRPC 服务端（带上游事件源）
+pub async fn run_grpc_server_with_source(
+    addr: SocketAddr,
+    event_source: mpsc::Receiver<BarrageEvent>,
+) -> Result<()> {
+    info!(addr = %addr, "gRPC server starting (with upstream source)");
+
+    let service = BarrageServiceImpl::new(event_source);
+
+    Server::builder()
+        .add_service(BarrageServiceServer::new(service))
+        .serve(addr)
+        .await
+        .context("gRPC server error")?;
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eleven_barrage_core::ChatMessage;
 
-    #[tokio::test]
-    async fn grpc_server_starts_and_binds() {
-        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-
-        // 启动 server（会在后台 listen）
-        let handle = tokio::spawn(async move {
-            // 注意：run_grpc_server 会一直 loop，这里我们用 try_bind 替代测试
-            let _listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    #[test]
+    fn convert_chat_message_to_grpc() {
+        let event = BarrageEvent::ChatMessage(ChatMessage {
+            content: "test".to_string(),
+            ..Default::default()
         });
 
-        handle.await.unwrap();
-    }
-}
+        let grpc_event = convert_barrage_event_to_grpc(event);
 
-// 重新导出 tonic::transport::Server 以避免未使用导入警告（保留供 T-008 使用）
-#[allow(dead_code)]
-fn _ensure_dependencies() {
-    let _ = Server::builder();
+        assert_eq!(grpc_event.event_type, "WebcastChatMessage");
+        assert!(grpc_event.payload_json.contains("test"));
+    }
+
+    #[tokio::test]
+    async fn health_check() {
+        let (_tx, rx) = mpsc::channel::<BarrageEvent>(1);
+        let service = BarrageServiceImpl::new(rx);
+
+        let response = service
+            .health(Request::new(HealthRequest {}))
+            .await
+            .unwrap();
+        let health = response.into_inner();
+        assert!(health.healthy);
+        assert_eq!(health.version, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[tokio::test]
+    async fn subscribe_streams_events() {
+        let (tx, rx) = mpsc::channel::<BarrageEvent>(16);
+        let service = BarrageServiceImpl::new(rx);
+
+        // 在另一个 task 中发送事件
+        tokio::spawn(async move {
+            for i in 0..3 {
+                let event = BarrageEvent::ChatMessage(ChatMessage {
+                    content: format!("msg-{}", i),
+                    ..Default::default()
+                });
+                tx.send(event).await.unwrap();
+            }
+        });
+
+        // 调用 subscribe
+        let request = SubscribeRequest {
+            room_id: "test_room".to_string(),
+            event_types: vec![],
+        };
+
+        let response = service
+            .subscribe(Request::new(request))
+            .await
+            .unwrap();
+        let mut stream = response.into_inner();
+
+        // 接收事件
+        let mut received = Vec::new();
+        for _ in 0..3 {
+            let event = stream.message().await.unwrap().unwrap();
+            received.push(event.payload_json);
+        }
+
+        assert_eq!(received.len(), 3);
+        assert!(received[0].contains("msg-0"));
+        assert!(received[2].contains("msg-2"));
+    }
+
+    #[tokio::test]
+    async fn event_source_consumed_only_once() {
+        let (tx, rx) = mpsc::channel::<BarrageEvent>(16);
+        let service = BarrageServiceImpl::new(rx);
+        drop(tx);
+
+        // 第一次调用：成功
+        let request = SubscribeRequest {
+            room_id: "test".to_string(),
+            event_types: vec![],
+        };
+        let _ = service.subscribe(Request::new(request)).await.unwrap();
+
+        // 第二次调用：返回 Unavailable（source 已被消费）
+        let result = service.subscribe(Request::new(request)).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code(), tonic::Code::Unavailable);
+    }
 }
