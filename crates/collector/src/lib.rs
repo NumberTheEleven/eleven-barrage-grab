@@ -75,6 +75,10 @@ pub use error::SignatureError;
 pub mod url_parser;
 pub use url_parser::{parse as parse_url, WebRid};
 
+/// im_fetch HTTP 客户端（auto-sign-fetcher R-004）
+pub mod im_fetch;
+pub use im_fetch::{ImFetcher, ImFetchConfig, ImFetchResponse};
+
 /// Collector trait — MVP 仅占位
 #[async_trait::async_trait]
 pub trait Collector: Send + Sync {
