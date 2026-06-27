@@ -1,0 +1,39 @@
+{
+  "feature": "custom-barrage",
+  "phase": "breakdown",
+  "created_at": "2026-06-27T13:42:00+08:00",
+  "version": "3.0",
+  "requirements_confirmed": true,
+  "open_questions": [
+    {
+      "id": "OQ-1",
+      "topic": "抖音 Web wss 签名机制",
+      "resolution": "采用采集/消费分离架构：MVP 阶段实现 service 主服务 + collector 子命令；MVP 内可接受复刻原项目 MITM 抓包作为兜底。长期通过 signature-strategy trait 支持签名策略可替换。"
+    },
+    {
+      "id": "OQ-2",
+      "topic": "登录态 Cookie",
+      "resolution": "Cookie 作为可选配置：公开直播间无需 Cookie（覆盖 word-guess 当前场景）；私密房间可通过配置文件或环境变量注入 Cookie；房间元数据 API 使用与原项目一致的 query 参数 (aid=6383, device_platform=web)。"
+    },
+    {
+      "id": "OQ-3",
+      "topic": "WS 与 gRPC 双通道消息协议",
+      "resolution": "共享同一份 BarrageEvent 业务 schema：内部用 prost 生成的强类型枚举；WS 通道用 JSON 编码（兼容、调试友好）；gRPC 通道用 Protobuf 二进制（高效、强类型）。MVP 推送 Chat/Gift/Like 三种，保留 5 种 schema 定义但不推送。"
+    }
+  ],
+  "isolation": {
+    "type": "worktree",
+    "path": ".claude/worktrees/devflow-custom-barrage",
+    "branch": "custom-barrage",
+    "target_branch": "main",
+    "created_at": "2026-06-27T13:42:00+08:00"
+  },
+  "checkpoints": {
+    "clarify": "done",
+    "breakdown": "in_progress",
+    "blueprint": "pending",
+    "implement": "pending",
+    "verify": "pending"
+  },
+  "rollback_history": []
+}
