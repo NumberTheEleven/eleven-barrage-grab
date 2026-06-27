@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+// package 名独立于 barrage，避免 tonic-build 把多个 .proto 合并到同一文件
+// 这样 tonic::include_proto!("signed") 生成的模块路径是 `signed::*`
+package signed;
+
+// R-008: Auto-sign mode gRPC interface
+//
+// 用户提供抖音直播间 URL，服务自动完成签名（解析 → room_info → im_fetch → wss），
+// 返回 SignedWssMaterial 或结构化错误。
+//
+// # 向后兼容
+// - `url` 字段是 `optional`（proto3 optional）
+// - 旧客户端（不传 url）走 custom-barrage 路径（用 wss_url + headers 注入）
+// - 新客户端（传 url）走 auto-sign 路径（本服务实现）
+service SignedBarrageService {
+  // 用户提供 URL，服务自动完成签名
+  rpc ProvideSignedWss(ProvideSignedWssRequest) returns (ProvideSignedWssResponse);
+}
+
+message ProvideSignedWssRequest {
+  // 抖音直播间 URL（auto-sign-fetcher）
+  // 不传 → 旧 custom-barrage 路径（用户提供已签名 URL）
+  // 传 → 新 auto-sign 路径
+  optional string url = 1;
+
+  // cookie 文件路径（可选，覆盖 config.toml 中的 [auth] 段）
+  optional string cookie_file = 2;
+}
+
+message ProvideSignedWssResponse {
+  oneof result {
+    // 成功：签名后的 wss 材料
+    SignedWssMaterial material = 1;
+    // 失败：结构化错误
+    SignatureErrorInfo error = 2;
+  }
+}
+
+message SignedWssMaterial {
+  // 签名后的 wss URL
+  string url = 1;
+  // 必需的 HTTP headers
+  map<string, string> headers = 2;
+  // 过期时间（Unix epoch 秒）
+  int64 expires_at_unix = 3;
+}
+
+message SignatureErrorInfo {
+  enum Code {
+    UNKNOWN = 0;
+    URL_FORMAT_NOT_SUPPORTED = 1;
+    EMPTY_URL = 2;
+    CONFIG_MISSING = 3;
+    COOKIE_EXPIRED = 4;
+    ALGORITHM_CHANGED = 5;
+    ROOM_NOT_FOUND = 6;
+    NETWORK_TRANSIENT = 7;
+  }
+  Code code = 1;
+  bool retryable = 2;
+  string message = 3;
+}

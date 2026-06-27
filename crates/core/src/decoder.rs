@@ -102,10 +102,7 @@ mod tests {
     fn empty_frame_returns_error() {
         let decoder = WssDecoder::new();
         let result = decoder.decode(&[], false);
-        assert!(matches!(
-            result,
-            Err(CoreError::InvalidWssHeader(_))
-        ));
+        assert!(matches!(result, Err(CoreError::InvalidWssHeader(_))));
     }
 
     #[test]

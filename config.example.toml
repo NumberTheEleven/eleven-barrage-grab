@@ -30,6 +30,14 @@ cookie = ""
 # 是否在启动时调用 room info API（用于获取 room_id_str）
 enabled = true
 
+# Auto-sign mode cookie (auto-sign-fetcher R-002)
+# 从浏览器 DevTools → Application → Cookies 复制：
+#   - ttwid: 必填，至少填一个
+#   - sessionid: 可选
+[auth]
+ttwid = "your_ttwid_here"
+sessionid = ""  # optional
+
 [events]
 # 允许推送的事件 method（MVP 默认仅 Chat/Gift/Like）
 push_event_methods = [

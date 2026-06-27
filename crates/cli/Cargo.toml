@@ -12,6 +12,12 @@ path = "src/main.rs"
 
 [dependencies]
 eleven-barrage-service = { path = "../service" }
+eleven-barrage-collector = { path = "../collector" }
+eleven-barrage-core = { path = "../core" }
 tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
+clap.workspace = true
+futures.workspace = true
+tokio-tungstenite.workspace = true
+tonic.workspace = true

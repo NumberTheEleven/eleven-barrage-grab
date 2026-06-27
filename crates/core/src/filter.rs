@@ -16,7 +16,10 @@ impl EventFilter {
     /// 创建 MVP 默认过滤器（仅 Chat/Gift/Like）
     pub fn mvp_default() -> Self {
         Self {
-            allow_methods: message_method::MVP_PUSH.iter().map(|s| s.to_string()).collect(),
+            allow_methods: message_method::MVP_PUSH
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 
@@ -103,7 +106,10 @@ mod tests {
 
         assert_eq!(
             filtered,
-            vec!["WebcastChatMessage".to_string(), "WebcastGiftMessage".to_string()]
+            vec![
+                "WebcastChatMessage".to_string(),
+                "WebcastGiftMessage".to_string()
+            ]
         );
     }
 }

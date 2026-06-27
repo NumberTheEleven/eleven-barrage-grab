@@ -6,16 +6,12 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use eleven_barrage_core::EventFilter;
 use tokio::signal;
+use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use crate::{
-    api::RoomInfoApi,
-    config::AppConfig,
-    grpc_server,
-    logging, metrics::MetricsExporter,
-    room::SingleRoomManager,
-    watchdog::Watchdog,
-    ws_server::WsServer,
+    api::RoomInfoApi, config::AppConfig, grpc_server, logging, metrics::MetricsExporter,
+    room::SingleRoomManager, signer::AutoSigner, watchdog::Watchdog, ws_server::WsServer,
     wss::WssConnectionManager,
 };
 
@@ -102,7 +98,9 @@ pub async fn run() -> Result<()> {
     }
 
     // 4. 校验配置
-    config.validate().context("configuration validation failed")?;
+    config
+        .validate()
+        .context("configuration validation failed")?;
 
     // 5. 初始化日志
     logging::init(&config.logging)?;
@@ -114,8 +112,8 @@ pub async fn run() -> Result<()> {
     );
 
     // 6. 安装 metrics
-    let _metrics_exporter = MetricsExporter::install(&config.service)
-        .context("failed to install metrics exporter")?;
+    let _metrics_exporter =
+        MetricsExporter::install(&config.service).context("failed to install metrics exporter")?;
 
     // 7. 启动 Watchdog
     let watchdog = Watchdog::default();
@@ -167,21 +165,34 @@ pub async fn run() -> Result<()> {
         })
     };
 
-    // 13. 启动 gRPC 服务端 task
+    // 13. 启动 gRPC 服务端 task（带上游事件源 + AutoSigner）
     let grpc_addr = config.service.grpc_listen_addr;
+    let room_api = RoomInfoApi::new(config.room_api.clone())
+        .context("failed to create room info API client")?;
+    let im_config = eleven_barrage_collector::ImFetchConfig::default();
+    let signer = AutoSigner::from_configs(room_api, im_config, config.auth.clone())?;
+    let (grpc_event_tx, grpc_event_rx) = mpsc::channel::<eleven_barrage_core::BarrageEvent>(1024);
+    drop(grpc_event_tx);
     let grpc_handle = tokio::spawn(async move {
-        if let Err(e) = grpc_server::run_grpc_server(grpc_addr).await {
+        if let Err(e) = grpc_server::run_grpc_server_with_source_and_signer(
+            grpc_addr,
+            grpc_event_rx,
+            Some(signer),
+        )
+        .await
+        {
             error!(error = %e, "gRPC server exited with error");
         }
     });
 
     // 14. 启动房间事件 pump（room manager → ws dispatcher）
-    let event_rx = room_manager
+    // event_rx 已 moved into gRPC server, 所以需要从 room_manager 重新取
+    let event_rx2 = room_manager
         .take_event_receiver()
         .ok_or_else(|| anyhow::anyhow!("event receiver already taken"))?;
 
     let _event_pump = tokio::spawn(async move {
-        let mut rx = event_rx;
+        let mut rx = event_rx2;
         while let Some(event) = rx.recv().await {
             ws_dispatcher.dispatch(event).await;
         }
@@ -211,7 +222,9 @@ pub async fn run() -> Result<()> {
 /// 等待 shutdown 信号（SIGTERM / Ctrl+C）
 async fn wait_for_shutdown() -> ShutdownReason {
     let ctrl_c = async {
-        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
     };
 
     #[cfg(unix)]

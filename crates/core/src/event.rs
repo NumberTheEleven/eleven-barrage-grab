@@ -57,8 +57,8 @@ pub enum BarrageEvent {
 
 // 类型别名 + serde rename 集中管理，便于将来修改字段名
 pub use proto::{
-    ChatMessage, GiftMessage, LikeMessage, MemberMessage, SocialMessage, ControlMessage,
-    RoomUserSeqMessage, FansclubMessage,
+    ChatMessage, ControlMessage, FansclubMessage, GiftMessage, LikeMessage, MemberMessage,
+    RoomUserSeqMessage, SocialMessage,
 };
 
 /// `MessageType` 字符串常量（与原项目 msg.Method 保持一致）
@@ -101,7 +101,9 @@ impl BarrageEvent {
             BarrageEvent::SocialMessage(m) => m.common.as_ref().map(|c| c.msg_id).unwrap_or(0),
             BarrageEvent::ControlMessage(m) => m.common.as_ref().map(|c| c.msg_id).unwrap_or(0),
             BarrageEvent::RoomUserSeqMessage(m) => m.common.as_ref().map(|c| c.msg_id).unwrap_or(0),
-            BarrageEvent::FansclubMessage(m) => m.common_info.as_ref().map(|c| c.msg_id).unwrap_or(0),
+            BarrageEvent::FansclubMessage(m) => {
+                m.common_info.as_ref().map(|c| c.msg_id).unwrap_or(0)
+            }
         }
     }
 
@@ -113,9 +115,15 @@ impl BarrageEvent {
             BarrageEvent::LikeMessage(m) => m.common.as_ref().map(|c| c.create_time).unwrap_or(0),
             BarrageEvent::MemberMessage(m) => m.common.as_ref().map(|c| c.create_time).unwrap_or(0),
             BarrageEvent::SocialMessage(m) => m.common.as_ref().map(|c| c.create_time).unwrap_or(0),
-            BarrageEvent::ControlMessage(m) => m.common.as_ref().map(|c| c.create_time).unwrap_or(0),
-            BarrageEvent::RoomUserSeqMessage(m) => m.common.as_ref().map(|c| c.create_time).unwrap_or(0),
-            BarrageEvent::FansclubMessage(m) => m.common_info.as_ref().map(|c| c.create_time).unwrap_or(0),
+            BarrageEvent::ControlMessage(m) => {
+                m.common.as_ref().map(|c| c.create_time).unwrap_or(0)
+            }
+            BarrageEvent::RoomUserSeqMessage(m) => {
+                m.common.as_ref().map(|c| c.create_time).unwrap_or(0)
+            }
+            BarrageEvent::FansclubMessage(m) => {
+                m.common_info.as_ref().map(|c| c.create_time).unwrap_or(0)
+            }
         }
     }
 
@@ -123,7 +131,9 @@ impl BarrageEvent {
     pub fn is_mvp_push(&self) -> bool {
         matches!(
             self,
-            BarrageEvent::ChatMessage(_) | BarrageEvent::GiftMessage(_) | BarrageEvent::LikeMessage(_)
+            BarrageEvent::ChatMessage(_)
+                | BarrageEvent::GiftMessage(_)
+                | BarrageEvent::LikeMessage(_)
         )
     }
 }

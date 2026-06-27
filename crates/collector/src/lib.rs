@@ -53,10 +53,7 @@ mod system_time_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    pub fn serialize<S: Serializer>(
-        t: &SystemTime,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(t: &SystemTime, serializer: S) -> Result<S::Ok, S::Error> {
         let duration = t.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
         duration.as_secs().serialize(serializer)
     }
@@ -66,6 +63,18 @@ mod system_time_serde {
         Ok(UNIX_EPOCH + Duration::from_secs(secs))
     }
 }
+
+/// 统一签名错误类型（auto-sign-fetcher R-006）
+pub mod error;
+pub use error::SignatureError;
+
+/// URL 解析器（auto-sign-fetcher R-001）
+pub mod url_parser;
+pub use url_parser::{parse as parse_url, WebRid};
+
+/// im_fetch HTTP 客户端（auto-sign-fetcher R-004）
+pub mod im_fetch;
+pub use im_fetch::{ImFetchConfig, ImFetchResponse, ImFetcher};
 
 /// Collector trait — MVP 仅占位
 #[async_trait::async_trait]
@@ -106,7 +115,10 @@ mod tests {
         let parsed: SignedWssMaterial = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed.url, material.url);
-        assert_eq!(parsed.headers.get("Cookie"), Some(&"ttwid=test".to_string()));
+        assert_eq!(
+            parsed.headers.get("Cookie"),
+            Some(&"ttwid=test".to_string())
+        );
     }
 
     #[tokio::test]

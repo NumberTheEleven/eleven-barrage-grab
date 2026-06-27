@@ -27,8 +27,7 @@ impl MetricsExporter {
     pub fn install(config: &ServiceConfig) -> Result<Self> {
         // 注意：set_buckets_for_metric 在 0.14 中签名是 `&mut self -> &mut Self`
         // 不能链式调用，必须用 mutable 变量
-        let builder = PrometheusBuilder::new()
-            .with_http_listener(config.metrics_listen_addr);
+        let builder = PrometheusBuilder::new().with_http_listener(config.metrics_listen_addr);
         let handle = builder
             .install_recorder()
             .context("failed to install Prometheus recorder")?;
@@ -143,7 +142,10 @@ mod tests {
             room_id: "test".to_string(),
             ws_listen_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 65530)),
             grpc_listen_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 65531)),
-            metrics_listen_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 65532)),
+            metrics_listen_addr: SocketAddr::V4(SocketAddrV4::new(
+                Ipv4Addr::new(127, 0, 0, 1),
+                65532,
+            )),
         };
 
         // 实际启动可能会失败（如果端口被占用），但我们只验证不会 panic

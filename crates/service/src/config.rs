@@ -15,6 +15,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use eleven_barrage_collector::SignatureError;
+
 /// 顶层配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -29,6 +31,9 @@ pub struct AppConfig {
 
     #[serde(default)]
     pub room_api: RoomApiConfig,
+
+    #[serde(default)]
+    pub auth: AuthConfig,
 
     #[serde(default)]
     pub mitm: MitmConfig,
@@ -107,6 +112,60 @@ pub struct RoomApiConfig {
     /// 是否在启动时调用 room info API（用于获取 room_id_str）
     #[serde(default = "default_room_api_enabled")]
     pub enabled: bool,
+
+    /// 自定义 API base URL（默认 live.douyin.com，用于测试）
+    #[serde(default = "default_room_api_base_url")]
+    pub base_url: String,
+}
+
+fn default_room_api_base_url() -> String {
+    "https://live.douyin.com".to_string()
+}
+
+/// 鉴权配置（auto-sign-fetcher R-002）
+///
+/// 用户从浏览器复制的登录态 cookie，用于调用
+/// `webcast/room/web/enter/` 和 `webcast/im/fetch/`。
+///
+/// 至少需要提供一个非空字段，否则 `validate()` 返回错误。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AuthConfig {
+    /// ttwid cookie（必需，至少一个）
+    #[serde(default)]
+    pub ttwid: String,
+
+    /// sessionid cookie（可选）
+    #[serde(default)]
+    pub sessionid: String,
+}
+
+impl AuthConfig {
+    /// 校验：至少一个 cookie 字段非空
+    pub fn validate(&self) -> Result<(), SignatureError> {
+        if self.ttwid.trim().is_empty() && self.sessionid.trim().is_empty() {
+            return Err(SignatureError::ConfigMissing {
+                field: "auth.ttwid or auth.sessionid".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    /// 拼接 cookie header 值（`ttwid=xxx; sessionid=yyy`）
+    pub fn to_cookie_header(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.ttwid.trim().is_empty() {
+            parts.push(format!("ttwid={}", self.ttwid.trim()));
+        }
+        if !self.sessionid.trim().is_empty() {
+            parts.push(format!("sessionid={}", self.sessionid.trim()));
+        }
+        parts.join("; ")
+    }
+
+    /// 是否有任一有效 cookie
+    pub fn has_any(&self) -> bool {
+        !self.ttwid.trim().is_empty() || !self.sessionid.trim().is_empty()
+    }
 }
 
 /// MITM 兜底配置（参考原项目 TitaniumProxy 模式）
@@ -210,6 +269,7 @@ impl Default for RoomApiConfig {
             cookie: String::new(),
             user_agent: default_user_agent(),
             enabled: default_room_api_enabled(),
+            base_url: default_room_api_base_url(),
         }
     }
 }
@@ -236,6 +296,7 @@ impl Default for AppConfig {
             wss: WssConfig::default(),
             events: EventsConfig::default(),
             room_api: RoomApiConfig::default(),
+            auth: AuthConfig::default(),
             mitm: MitmConfig::default(),
             logging: LoggingConfig::default(),
         }
@@ -376,5 +437,109 @@ mod tests {
         assert!(cfg.validate().is_ok());
         assert_eq!(cfg.service.ws_listen_addr.port(), 9999);
         assert_eq!(cfg.wss.heartbeat_interval_secs, 5);
+    }
+
+    // ===== AuthConfig 测试 (R-002) =====
+
+    #[test]
+    fn auth_config_default_is_empty() {
+        let auth = AuthConfig::default();
+        assert_eq!(auth.ttwid, "");
+        assert_eq!(auth.sessionid, "");
+        assert!(!auth.has_any());
+    }
+
+    #[test]
+    fn auth_config_validate_fails_when_empty() {
+        let auth = AuthConfig::default();
+        let result = auth.validate();
+        assert!(matches!(result, Err(SignatureError::ConfigMissing { .. })));
+    }
+
+    #[test]
+    fn auth_config_validate_passes_with_ttwid() {
+        let auth = AuthConfig {
+            ttwid: "test_ttwid".to_string(),
+            sessionid: String::new(),
+        };
+        assert!(auth.validate().is_ok());
+    }
+
+    #[test]
+    fn auth_config_validate_passes_with_sessionid_only() {
+        let auth = AuthConfig {
+            ttwid: String::new(),
+            sessionid: "test_sessionid".to_string(),
+        };
+        assert!(auth.validate().is_ok());
+    }
+
+    #[test]
+    fn auth_config_to_cookie_header_ttwid_only() {
+        let auth = AuthConfig {
+            ttwid: "abc".to_string(),
+            sessionid: String::new(),
+        };
+        assert_eq!(auth.to_cookie_header(), "ttwid=abc");
+    }
+
+    #[test]
+    fn auth_config_to_cookie_header_both() {
+        let auth = AuthConfig {
+            ttwid: "abc".to_string(),
+            sessionid: "def".to_string(),
+        };
+        assert_eq!(auth.to_cookie_header(), "ttwid=abc; sessionid=def");
+    }
+
+    #[test]
+    fn auth_config_to_cookie_header_trims_whitespace() {
+        let auth = AuthConfig {
+            ttwid: "  abc  ".to_string(),
+            sessionid: String::new(),
+        };
+        assert_eq!(auth.to_cookie_header(), "ttwid=abc");
+    }
+
+    #[test]
+    fn auth_config_parses_from_toml() {
+        let toml = r#"
+            [auth]
+            ttwid = "test_ttwid"
+            sessionid = "test_sessionid"
+        "#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.auth.ttwid, "test_ttwid");
+        assert_eq!(cfg.auth.sessionid, "test_sessionid");
+        assert!(cfg.auth.validate().is_ok());
+    }
+
+    #[test]
+    fn auth_config_parses_optional_section() {
+        let toml = r#"
+            [service]
+            room_id = "test"
+        "#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.auth.ttwid, "");
+        assert_eq!(cfg.auth.sessionid, "");
+    }
+
+    #[test]
+    fn auth_config_has_any() {
+        let empty = AuthConfig::default();
+        assert!(!empty.has_any());
+
+        let ttwid = AuthConfig {
+            ttwid: "x".to_string(),
+            sessionid: String::new(),
+        };
+        assert!(ttwid.has_any());
+
+        let sessionid = AuthConfig {
+            ttwid: String::new(),
+            sessionid: "y".to_string(),
+        };
+        assert!(sessionid.has_any());
     }
 }
