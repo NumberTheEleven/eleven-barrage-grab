@@ -52,7 +52,8 @@ pub use session::{SessionFaultDetector, SessionFaultReason};
 // 添加 rand 依赖（resilience 模块使用）
 // 注意：rand 是 workspace.dependencies 中未列出的，需要单独加
 // 为了不引入新依赖，这里使用一个最小的 LCG 伪随机
-mod rand {
+// 设为 pub(crate) 让子模块 (resilience.rs) 可以访问
+pub(crate) mod rand {
     use std::cell::Cell;
     use std::time::SystemTime;
 

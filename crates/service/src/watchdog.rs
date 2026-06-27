@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
+use tracing::{error, info};
 
 #[derive(Debug, Clone, Copy)]
 struct Heartbeat {

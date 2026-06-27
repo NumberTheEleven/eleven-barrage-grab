@@ -12,6 +12,7 @@
 use std::io::Read;
 
 use flate2::read::GzDecoder;
+use prost::Message;
 
 use eleven_barrage_proto::{Response, WssResponse};
 

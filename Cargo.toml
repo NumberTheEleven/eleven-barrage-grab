@@ -64,9 +64,9 @@ flate2 = "1.0"
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 
-# 测试
-criterion = { version = "0.5", features = ["html_reports"] }
-mockall = "0.12"
+# 测试（暂时未使用，保留供后续 criterion benchmark）
+# criterion = { version = "0.5", features = ["html_reports"] }
+# mockall = "0.12"
 
 # 内部 crate
 eleven-barrage-proto = { path = "crates/proto" }

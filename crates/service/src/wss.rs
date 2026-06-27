@@ -153,10 +153,14 @@ impl WssConnectionManager {
                 .uri(&self.config.url);
 
         for (key, value) in &self.config.headers {
-            request_builder = request_builder.header(key.as_str(), value.as_str());
+            request_builder = request_builder
+                .header(key.as_str(), value.as_str())
+                .context("invalid header value in wss config")?;
         }
 
-        let request = request_builder.build().context("failed to build wss request")?;
+        let request = request_builder
+            .build()
+            .context("failed to build wss request")?;
 
         let (ws_stream, response) = connect_async(request)
             .await
