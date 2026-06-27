@@ -1,0 +1,44 @@
+{
+  "feature": "auto-sign-fetcher",
+  "phase": "blueprint",
+  "created_at": "2026-06-28T06:47:19+08:00",
+  "version": "3.0",
+  "requirements_confirmed": true,
+  "open_questions": [],
+  "isolation": {
+    "type": "worktree",
+    "path": ".claude/worktrees/devflow-auto-sign-fetcher",
+    "branch": "auto-sign-fetcher",
+    "target_branch": "main",
+    "created_at": "2026-06-28T06:47:19+08:00"
+  },
+  "checkpoints": {
+    "clarify": "done",
+    "breakdown": "done",
+    "blueprint": "pending",
+    "implement": "pending",
+    "verify": "pending"
+  },
+  "context": {
+    "auto_loaded_memory": [
+      "project-future-url-direct-mode",
+      "project-eleven-barrage-grab",
+      "feedback-toolchain-on-d-drive",
+      "feedback-protoc-build-rs-pattern"
+    ],
+    "scope_decisions": {
+      "cookie_source": "user_manual_paste_config_toml",
+      "failure_behavior": "structured_error_with_retryable_flag",
+      "url_scope": "live_douyin_com_with_lenient_parsing",
+      "excluded": [
+        "signature_algorithm_reverse_engineering",
+        "short_url_redirect_following",
+        "auto_qr_login",
+        "retry_logic",
+        "pure_room_id_input",
+        "custom_barrage_fallback_path"
+      ]
+    }
+  },
+  "updated_at": "2026-06-28T06:50:33+08:00"
+}

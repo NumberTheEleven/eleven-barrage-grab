@@ -67,6 +67,10 @@ mod system_time_serde {
     }
 }
 
+/// 统一签名错误类型（auto-sign-fetcher R-006）
+pub mod error;
+pub use error::SignatureError;
+
 /// Collector trait — MVP 仅占位
 #[async_trait::async_trait]
 pub trait Collector: Send + Sync {
