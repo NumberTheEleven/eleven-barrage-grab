@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 eleven-barrage-proto.workspace = true
 eleven-barrage-core.workspace = true
+eleven-barrage-collector = { path = "../collector" }
 tokio.workspace = true
 tokio-util.workspace = true
 tokio-stream.workspace = true
