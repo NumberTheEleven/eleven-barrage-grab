@@ -11,7 +11,7 @@ use tracing::warn;
 use eleven_barrage_proto as proto;
 use eleven_barrage_proto::{Response, WssResponse};
 
-use crate::error::{CoreError, CoreResult};
+use crate::error::CoreResult;
 use crate::event::{message_method, BarrageEvent};
 
 /// 消息分发器
