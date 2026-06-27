@@ -16,7 +16,7 @@ eleven-barrage-core.workspace = true
 eleven-barrage-collector = { path = "../collector" }
 tokio.workspace = true
 tokio-util.workspace = true
-tokio-stream.workspace = true
+tokio-stream = { workspace = true, features = ["net"] }
 async-stream.workspace = true
 futures.workspace = true
 async-trait.workspace = true

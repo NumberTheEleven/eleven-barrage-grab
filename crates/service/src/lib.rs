@@ -26,7 +26,7 @@ pub mod ws_server;
 pub mod wss;
 
 pub use api::{RoomInfo, RoomInfoApi};
-pub use config::AppConfig;
+pub use config::{AppConfig, AuthConfig, RoomApiConfig};
 pub use grpc_signed::{
     signed_proto, SignedBarrageServiceImpl, SignedBarrageServiceServer,
 };

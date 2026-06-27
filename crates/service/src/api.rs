@@ -80,15 +80,15 @@ impl RoomInfoApi {
         query.insert("browser_platform", "Win32");
         query.insert("browser_name", "Edge");
 
-        let url = "https://live.douyin.com/webcast/room/web/enter/";
+        let url = format!("{}/webcast/room/web/enter/", self.config.base_url);
 
         let mut request = self
             .client
-            .get(url)
+            .get(&url)
             .query(&query)
             .header("Accept", "application/json, text/plain, */*")
             .header("Cache-Control", "no-cache")
-            .header("Referer", format!("https://live.douyin.com/{}", web_room_id))
+            .header("Referer", format!("{}/{}", self.config.base_url, web_room_id))
             .header("Host", "live.douyin.com");
 
         if !self.config.cookie.is_empty() {
@@ -189,15 +189,15 @@ impl RoomInfoApi {
         query.insert("browser_platform", "Win32");
         query.insert("browser_name", "Edge");
 
-        let url = "https://live.douyin.com/webcast/room/web/enter/";
+        let url = format!("{}/webcast/room/web/enter/", self.config.base_url);
 
         let mut request = self
             .client
-            .get(url)
+            .get(&url)
             .query(&query)
             .header("Accept", "application/json, text/plain, */*")
             .header("Cache-Control", "no-cache")
-            .header("Referer", format!("https://live.douyin.com/{}", web_rid))
+            .header("Referer", format!("{}/{}", self.config.base_url, web_rid))
             .header("Host", "live.douyin.com");
 
         if !self.config.cookie.is_empty() {
@@ -261,7 +261,7 @@ impl RoomInfoApi {
         let status_code = room.get("status").and_then(|s| s.as_i64()).unwrap_or(0);
         let is_live = status_code == 2;
 
-        let live_url = format!("https://live.douyin.com/{}", web_rid);
+        let live_url = format!("{}/{}", self.config.base_url, web_rid);
 
         Ok(RoomInfo {
             room_id: room_id_str,

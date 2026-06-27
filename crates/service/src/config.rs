@@ -112,6 +112,14 @@ pub struct RoomApiConfig {
     /// 是否在启动时调用 room info API（用于获取 room_id_str）
     #[serde(default = "default_room_api_enabled")]
     pub enabled: bool,
+
+    /// 自定义 API base URL（默认 live.douyin.com，用于测试）
+    #[serde(default = "default_room_api_base_url")]
+    pub base_url: String,
+}
+
+fn default_room_api_base_url() -> String {
+    "https://live.douyin.com".to_string()
 }
 
 /// 鉴权配置（auto-sign-fetcher R-002）
@@ -261,6 +269,7 @@ impl Default for RoomApiConfig {
             cookie: String::new(),
             user_agent: default_user_agent(),
             enabled: default_room_api_enabled(),
+            base_url: default_room_api_base_url(),
         }
     }
 }
