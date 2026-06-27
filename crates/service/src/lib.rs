@@ -27,9 +27,7 @@ pub mod wss;
 
 pub use api::{RoomInfo, RoomInfoApi};
 pub use config::{AppConfig, AuthConfig, RoomApiConfig};
-pub use grpc_signed::{
-    signed_proto, SignedBarrageServiceImpl, SignedBarrageServiceServer,
-};
+pub use grpc_signed::{signed_proto, SignedBarrageServiceImpl, SignedBarrageServiceServer};
 pub use logging::init as init_logging;
 pub use metrics::{MetricsExporter, WssState};
 pub use room::{RoomManager, SingleRoomManager};

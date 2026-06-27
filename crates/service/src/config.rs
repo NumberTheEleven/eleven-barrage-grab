@@ -453,10 +453,7 @@ mod tests {
     fn auth_config_validate_fails_when_empty() {
         let auth = AuthConfig::default();
         let result = auth.validate();
-        assert!(matches!(
-            result,
-            Err(SignatureError::ConfigMissing { .. })
-        ));
+        assert!(matches!(result, Err(SignatureError::ConfigMissing { .. })));
     }
 
     #[test]

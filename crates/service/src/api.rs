@@ -88,7 +88,10 @@ impl RoomInfoApi {
             .query(&query)
             .header("Accept", "application/json, text/plain, */*")
             .header("Cache-Control", "no-cache")
-            .header("Referer", format!("{}/{}", self.config.base_url, web_room_id))
+            .header(
+                "Referer",
+                format!("{}/{}", self.config.base_url, web_room_id),
+            )
             .header("Host", "live.douyin.com");
 
         if !self.config.cookie.is_empty() {
@@ -137,10 +140,7 @@ impl RoomInfoApi {
             .and_then(|n| n.as_str())
             .map(String::from);
 
-        let title = room
-            .get("title")
-            .and_then(|t| t.as_str())
-            .map(String::from);
+        let title = room.get("title").and_then(|t| t.as_str()).map(String::from);
 
         let status = room.get("status").and_then(|s| s.as_i64()).unwrap_or(0);
         let is_live = status == 2; // 2 = 开播中
@@ -231,9 +231,7 @@ impl RoomInfoApi {
         let parsed: serde_json::Value =
             serde_json::from_str(&body).map_err(|_| SignatureError::AlgorithmChanged)?;
 
-        let data = parsed
-            .get("data")
-            .ok_or(SignatureError::AlgorithmChanged)?;
+        let data = parsed.get("data").ok_or(SignatureError::AlgorithmChanged)?;
 
         let room = data.get("room").ok_or(SignatureError::AlgorithmChanged)?;
 
@@ -253,10 +251,7 @@ impl RoomInfoApi {
             .and_then(|n| n.as_str())
             .map(String::from);
 
-        let title = room
-            .get("title")
-            .and_then(|t| t.as_str())
-            .map(String::from);
+        let title = room.get("title").and_then(|t| t.as_str()).map(String::from);
 
         let status_code = room.get("status").and_then(|s| s.as_i64()).unwrap_or(0);
         let is_live = status_code == 2;
@@ -457,9 +452,7 @@ mod tests {
         // 简化：直接验证 match 逻辑——当 status 是 403 时返回 CookieExpired
         // 这里通过一个简单 test：构造一个 mock server
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let port = rt.block_on(async {
-            start_mock_server(|_| MockResponse::status(403)).await
-        });
+        let port = rt.block_on(async { start_mock_server(|_| MockResponse::status(403)).await });
         let res = rt.block_on(async {
             reqwest::Client::new()
                 .get(format!("http://127.0.0.1:{}/test", port))

@@ -53,9 +53,11 @@ pub fn parse(input: &str) -> Result<WebRid, SignatureError> {
     })?;
 
     // 3. 域名白名单
-    let host = url.host_str().ok_or_else(|| SignatureError::UrlFormatNotSupported {
-        url: input.to_string(),
-    })?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| SignatureError::UrlFormatNotSupported {
+            url: input.to_string(),
+        })?;
     if host != ALLOWED_HOST {
         return Err(SignatureError::UrlFormatNotSupported {
             url: input.to_string(),

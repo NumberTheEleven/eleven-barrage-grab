@@ -49,7 +49,9 @@ fn full_pipeline_with_mixed_events() {
     let (wss, response) = decoder.decode(&frame, false).expect("decode failed");
 
     let dispatcher = Dispatcher::new();
-    let events = dispatcher.dispatch(&wss, &response).expect("dispatch failed");
+    let events = dispatcher
+        .dispatch(&wss, &response)
+        .expect("dispatch failed");
 
     assert_eq!(events.len(), 3);
 
@@ -65,9 +67,7 @@ fn gzip_compressed_frame_decodes_correctly() {
 
     let decoder = WssDecoder::new();
     // gzip_hint = true 表示"这是压缩帧，强制尝试解压"
-    let (_, response) = decoder
-        .decode(&frame, true)
-        .expect("gzip decode failed");
+    let (_, response) = decoder.decode(&frame, true).expect("gzip decode failed");
 
     assert_eq!(response.messages.len(), 1);
 }
@@ -95,7 +95,9 @@ fn dispatcher_continues_after_corrupted_message() {
     let (wss, response) = decoder.decode(&frame, false).expect("decode failed");
 
     let dispatcher = Dispatcher::new();
-    let events = dispatcher.dispatch(&wss, &response).expect("dispatch failed");
+    let events = dispatcher
+        .dispatch(&wss, &response)
+        .expect("dispatch failed");
 
     // 第一条损坏被跳过，第二条成功
     assert_eq!(events.len(), 1);
@@ -110,8 +112,11 @@ fn session_fault_triggers_after_consecutive_failures() {
     let wait_task = std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            tokio::time::timeout(std::time::Duration::from_millis(500), detector_clone.wait_fault())
-                .await
+            tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                detector_clone.wait_fault(),
+            )
+            .await
         })
     });
 
@@ -166,9 +171,7 @@ fn ring_buffer_dedup_capacity() {
 fn filter_mvp_excludes_member_social_control() {
     let filter = EventFilter::mvp_default();
 
-    use eleven_barrage_core::{
-        ControlMessage, MemberMessage, RoomUserSeqMessage, SocialMessage,
-    };
+    use eleven_barrage_core::{ControlMessage, MemberMessage, RoomUserSeqMessage, SocialMessage};
 
     assert!(!filter.allows(&BarrageEvent::MemberMessage(MemberMessage::default())));
     assert!(!filter.allows(&BarrageEvent::SocialMessage(SocialMessage::default())));

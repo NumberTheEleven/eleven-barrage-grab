@@ -10,14 +10,8 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use crate::{
-    api::RoomInfoApi,
-    config::AppConfig,
-    grpc_server,
-    logging, metrics::MetricsExporter,
-    room::SingleRoomManager,
-    signer::AutoSigner,
-    watchdog::Watchdog,
-    ws_server::WsServer,
+    api::RoomInfoApi, config::AppConfig, grpc_server, logging, metrics::MetricsExporter,
+    room::SingleRoomManager, signer::AutoSigner, watchdog::Watchdog, ws_server::WsServer,
     wss::WssConnectionManager,
 };
 
@@ -104,7 +98,9 @@ pub async fn run() -> Result<()> {
     }
 
     // 4. 校验配置
-    config.validate().context("configuration validation failed")?;
+    config
+        .validate()
+        .context("configuration validation failed")?;
 
     // 5. 初始化日志
     logging::init(&config.logging)?;
@@ -116,8 +112,8 @@ pub async fn run() -> Result<()> {
     );
 
     // 6. 安装 metrics
-    let _metrics_exporter = MetricsExporter::install(&config.service)
-        .context("failed to install metrics exporter")?;
+    let _metrics_exporter =
+        MetricsExporter::install(&config.service).context("failed to install metrics exporter")?;
 
     // 7. 启动 Watchdog
     let watchdog = Watchdog::default();
@@ -226,7 +222,9 @@ pub async fn run() -> Result<()> {
 /// 等待 shutdown 信号（SIGTERM / Ctrl+C）
 async fn wait_for_shutdown() -> ShutdownReason {
     let ctrl_c = async {
-        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
     };
 
     #[cfg(unix)]

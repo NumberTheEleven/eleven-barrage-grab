@@ -48,7 +48,11 @@ impl fmt::Display for SignatureError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UrlFormatNotSupported { url } => {
-                write!(f, "URL format not supported: {} (only live.douyin.com is accepted)", url)
+                write!(
+                    f,
+                    "URL format not supported: {} (only live.douyin.com is accepted)",
+                    url
+                )
             }
             Self::EmptyUrl => write!(f, "URL is empty"),
             Self::ConfigMissing { field } => write!(f, "config missing: {}", field),
@@ -158,25 +162,34 @@ mod tests {
     #[test]
     fn error_codes_are_stable_strings() {
         assert_eq!(
-            SignatureError::UrlFormatNotSupported { url: "x".to_string() }.code(),
+            SignatureError::UrlFormatNotSupported {
+                url: "x".to_string()
+            }
+            .code(),
             "URL_FORMAT_NOT_SUPPORTED"
         );
         assert_eq!(SignatureError::EmptyUrl.code(), "EMPTY_URL");
         assert_eq!(
-            SignatureError::ConfigMissing { field: "f".to_string() }.code(),
+            SignatureError::ConfigMissing {
+                field: "f".to_string()
+            }
+            .code(),
             "CONFIG_MISSING"
         );
         assert_eq!(SignatureError::CookieExpired.code(), "COOKIE_EXPIRED");
+        assert_eq!(SignatureError::AlgorithmChanged.code(), "ALGORITHM_CHANGED");
         assert_eq!(
-            SignatureError::AlgorithmChanged.code(),
-            "ALGORITHM_CHANGED"
-        );
-        assert_eq!(
-            SignatureError::RoomNotFound { web_rid: "x".to_string() }.code(),
+            SignatureError::RoomNotFound {
+                web_rid: "x".to_string()
+            }
+            .code(),
             "ROOM_NOT_FOUND"
         );
         assert_eq!(
-            SignatureError::NetworkTransient { reason: "x".to_string() }.code(),
+            SignatureError::NetworkTransient {
+                reason: "x".to_string()
+            }
+            .code(),
             "NETWORK_TRANSIENT"
         );
     }

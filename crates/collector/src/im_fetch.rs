@@ -129,8 +129,7 @@ impl ImFetcher {
         Ok(SignedWssMaterial {
             url: body.wss_url,
             headers: body.headers,
-            expires_at: std::time::SystemTime::UNIX_EPOCH
-                + Duration::from_secs(body.expires_at),
+            expires_at: std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(body.expires_at),
         })
     }
 
@@ -274,7 +273,10 @@ mod tests {
             .expect("expected success");
 
         assert_eq!(material.url, "wss://example.com/push");
-        assert_eq!(material.headers.get("X-MS-STUB"), Some(&"stub123".to_string()));
+        assert_eq!(
+            material.headers.get("X-MS-STUB"),
+            Some(&"stub123".to_string())
+        );
         assert!(!material.is_expired());
     }
 

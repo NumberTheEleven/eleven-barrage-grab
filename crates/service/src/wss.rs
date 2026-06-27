@@ -153,8 +153,7 @@ impl WssConnectionManager {
             .uri(&self.config.url);
 
         for (key, value) in &self.config.headers {
-            request_builder = request_builder
-                .header(key.as_str(), value.as_str());
+            request_builder = request_builder.header(key.as_str(), value.as_str());
         }
 
         let request = request_builder
@@ -304,7 +303,11 @@ impl WssConnectionManager {
     fn spawn_heartbeat(
         &self,
         room_id: &str,
-        write: Arc<tokio::sync::Mutex<futures::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
+        write: Arc<
+            tokio::sync::Mutex<
+                futures::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+            >,
+        >,
     ) -> tokio::task::JoinHandle<()> {
         let interval_secs = self.config.heartbeat_interval_secs;
         let room_id = room_id.to_string();

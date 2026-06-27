@@ -59,7 +59,9 @@ impl MsgDedup {
 
         // FIFO 队列容量管理
         let mut fifos = self.fifos.lock();
-        let fifo = fifos.entry(method.to_string()).or_insert_with(|| VecDeque::with_capacity(self.capacity));
+        let fifo = fifos
+            .entry(method.to_string())
+            .or_insert_with(|| VecDeque::with_capacity(self.capacity));
 
         if fifo.len() >= self.capacity {
             // 移除最旧的

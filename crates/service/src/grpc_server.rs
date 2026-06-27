@@ -66,9 +66,8 @@ impl BarrageServiceImpl {
 
 #[tonic::async_trait]
 impl BarrageService for BarrageServiceImpl {
-    type SubscribeStream = Pin<
-        Box<dyn Stream<Item = Result<GrpcBarrageEvent, Status>> + Send + Sync>,
-    >;
+    type SubscribeStream =
+        Pin<Box<dyn Stream<Item = Result<GrpcBarrageEvent, Status>> + Send + Sync>>;
 
     async fn subscribe(
         &self,
@@ -220,10 +219,7 @@ mod tests {
             event_types: vec![],
         };
 
-        let response = service
-            .subscribe(Request::new(request))
-            .await
-            .unwrap();
+        let response = service.subscribe(Request::new(request)).await.unwrap();
         let mut stream = response.into_inner();
 
         // 接收事件
@@ -250,7 +246,10 @@ mod tests {
             room_id: "test".to_string(),
             event_types: vec![],
         };
-        let _ = service.subscribe(Request::new(request.clone())).await.unwrap();
+        let _ = service
+            .subscribe(Request::new(request.clone()))
+            .await
+            .unwrap();
 
         // 第二次调用：返回 Unavailable（source 已被消费）
         let result = service.subscribe(Request::new(request)).await;

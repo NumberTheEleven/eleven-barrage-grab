@@ -17,7 +17,7 @@
 //! 因为它需要同时使用 `RoomInfoApi`（service）和 `ImFetcher`（collector），
 //! 放 service 可避免循环依赖。
 
-use eleven_barrage_collector::{ImFetcher, ImFetchConfig, SignedWssMaterial, SignatureError};
+use eleven_barrage_collector::{ImFetchConfig, ImFetcher, SignatureError, SignedWssMaterial};
 use tracing::{debug, info};
 
 use crate::api::RoomInfoApi;

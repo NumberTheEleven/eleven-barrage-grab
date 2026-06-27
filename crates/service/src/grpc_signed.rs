@@ -79,9 +79,11 @@ impl SignedBarrageService for SignedBarrageServiceImpl {
             Err(e) => {
                 warn!(error = %e, "url parse failed");
                 return Ok(Response::new(ProvideSignedWssResponse {
-                    result: Some(self::signed_proto::provide_signed_wss_response::Result::Error(
-                        to_error_info(&e),
-                    )),
+                    result: Some(
+                        self::signed_proto::provide_signed_wss_response::Result::Error(
+                            to_error_info(&e),
+                        ),
+                    ),
                 }));
             }
         };
@@ -101,9 +103,11 @@ impl SignedBarrageService for SignedBarrageServiceImpl {
             Err(e) => {
                 warn!(error = %e, "auto-sign failed");
                 Ok(Response::new(ProvideSignedWssResponse {
-                    result: Some(self::signed_proto::provide_signed_wss_response::Result::Error(
-                        to_error_info(&e),
-                    )),
+                    result: Some(
+                        self::signed_proto::provide_signed_wss_response::Result::Error(
+                            to_error_info(&e),
+                        ),
+                    ),
                 }))
             }
         }
@@ -113,13 +117,19 @@ impl SignedBarrageService for SignedBarrageServiceImpl {
 /// SignatureError → SignatureErrorInfo (proto)
 fn to_error_info(err: &SignatureError) -> SignatureErrorInfo {
     let code = match err.code() {
-        "URL_FORMAT_NOT_SUPPORTED" => self::signed_proto::signature_error_info::Code::UrlFormatNotSupported as i32,
+        "URL_FORMAT_NOT_SUPPORTED" => {
+            self::signed_proto::signature_error_info::Code::UrlFormatNotSupported as i32
+        }
         "EMPTY_URL" => self::signed_proto::signature_error_info::Code::EmptyUrl as i32,
         "CONFIG_MISSING" => self::signed_proto::signature_error_info::Code::ConfigMissing as i32,
         "COOKIE_EXPIRED" => self::signed_proto::signature_error_info::Code::CookieExpired as i32,
-        "ALGORITHM_CHANGED" => self::signed_proto::signature_error_info::Code::AlgorithmChanged as i32,
+        "ALGORITHM_CHANGED" => {
+            self::signed_proto::signature_error_info::Code::AlgorithmChanged as i32
+        }
         "ROOM_NOT_FOUND" => self::signed_proto::signature_error_info::Code::RoomNotFound as i32,
-        "NETWORK_TRANSIENT" => self::signed_proto::signature_error_info::Code::NetworkTransient as i32,
+        "NETWORK_TRANSIENT" => {
+            self::signed_proto::signature_error_info::Code::NetworkTransient as i32
+        }
         _ => self::signed_proto::signature_error_info::Code::Unknown as i32,
     };
 
@@ -150,7 +160,7 @@ mod tests {
     use super::*;
     use crate::api::RoomInfoApi;
     use crate::config::{AuthConfig, RoomApiConfig};
-    use eleven_barrage_collector::{ImFetcher, ImFetchConfig};
+    use eleven_barrage_collector::{ImFetchConfig, ImFetcher};
 
     fn make_test_signer() -> AutoSigner {
         let auth = AuthConfig {
@@ -231,13 +241,21 @@ mod tests {
     #[test]
     fn to_error_info_maps_all_codes() {
         let errors = [
-            SignatureError::UrlFormatNotSupported { url: "x".to_string() },
+            SignatureError::UrlFormatNotSupported {
+                url: "x".to_string(),
+            },
             SignatureError::EmptyUrl,
-            SignatureError::ConfigMissing { field: "x".to_string() },
+            SignatureError::ConfigMissing {
+                field: "x".to_string(),
+            },
             SignatureError::CookieExpired,
             SignatureError::AlgorithmChanged,
-            SignatureError::RoomNotFound { web_rid: "x".to_string() },
-            SignatureError::NetworkTransient { reason: "x".to_string() },
+            SignatureError::RoomNotFound {
+                web_rid: "x".to_string(),
+            },
+            SignatureError::NetworkTransient {
+                reason: "x".to_string(),
+            },
         ];
         for err in &errors {
             let info = to_error_info(err);

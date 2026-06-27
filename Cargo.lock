@@ -420,8 +420,14 @@ name = "eleven-barrage-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
+ "eleven-barrage-collector",
+ "eleven-barrage-core",
  "eleven-barrage-service",
+ "futures",
  "tokio",
+ "tokio-tungstenite",
+ "tonic",
  "tracing",
 ]
 
@@ -431,11 +437,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -475,6 +483,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "clap",
+ "eleven-barrage-collector",
  "eleven-barrage-core",
  "eleven-barrage-proto",
  "futures",

@@ -145,7 +145,9 @@ mod tests {
             ..Default::default()
         };
 
-        let events = dispatcher.dispatch(&WssResponse::default(), &response).unwrap();
+        let events = dispatcher
+            .dispatch(&WssResponse::default(), &response)
+            .unwrap();
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0], BarrageEvent::ChatMessage(_)));
     }
@@ -163,7 +165,9 @@ mod tests {
             ..Default::default()
         };
 
-        let events = dispatcher.dispatch(&WssResponse::default(), &response).unwrap();
+        let events = dispatcher
+            .dispatch(&WssResponse::default(), &response)
+            .unwrap();
         assert_eq!(events.len(), 0);
     }
 
@@ -192,7 +196,9 @@ mod tests {
             ..Default::default()
         };
 
-        let events = dispatcher.dispatch(&WssResponse::default(), &response).unwrap();
+        let events = dispatcher
+            .dispatch(&WssResponse::default(), &response)
+            .unwrap();
         // 第一条失败被跳过，第二条成功
         assert_eq!(events.len(), 1);
     }

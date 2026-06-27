@@ -114,9 +114,11 @@ async fn call_provide_signed_wss(
 
     let mut client = SignedBarrageServiceClient::connect(grpc_addr.to_string())
         .await
-        .map_err(|e| eleven_barrage_collector::SignatureError::NetworkTransient {
-            reason: format!("grpc connect failed: {}", e),
-        })?;
+        .map_err(
+            |e| eleven_barrage_collector::SignatureError::NetworkTransient {
+                reason: format!("grpc connect failed: {}", e),
+            },
+        )?;
 
     let request = ProvideSignedWssRequest {
         url: Some(url.to_string()),
@@ -126,23 +128,25 @@ async fn call_provide_signed_wss(
     let response = client
         .provide_signed_wss(tonic::Request::new(request))
         .await
-        .map_err(|e| eleven_barrage_collector::SignatureError::NetworkTransient {
-            reason: format!("grpc call failed: {}", e),
-        })?;
+        .map_err(
+            |e| eleven_barrage_collector::SignatureError::NetworkTransient {
+                reason: format!("grpc call failed: {}", e),
+            },
+        )?;
 
     let inner = response.into_inner();
     match inner.result {
-        Some(eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Material(m)) => {
-            Ok(eleven_barrage_collector::SignedWssMaterial {
-                url: m.url,
-                headers: m.headers.into_iter().collect(),
-                expires_at: std::time::SystemTime::UNIX_EPOCH
-                    + Duration::from_secs(m.expires_at_unix as u64),
-            })
-        }
-        Some(eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Error(err)) => {
-            Err(map_proto_error(err))
-        }
+        Some(
+            eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Material(m),
+        ) => Ok(eleven_barrage_collector::SignedWssMaterial {
+            url: m.url,
+            headers: m.headers.into_iter().collect(),
+            expires_at: std::time::SystemTime::UNIX_EPOCH
+                + Duration::from_secs(m.expires_at_unix as u64),
+        }),
+        Some(eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Error(
+            err,
+        )) => Err(map_proto_error(err)),
         None => Err(eleven_barrage_collector::SignatureError::AlgorithmChanged),
     }
 }
@@ -154,13 +158,13 @@ fn map_proto_error(
     use eleven_barrage_service::signed_proto::signature_error_info::Code;
     let code = Code::try_from(err.code).unwrap_or(Code::Unknown);
     match code {
-        Code::UrlFormatNotSupported => eleven_barrage_collector::SignatureError::UrlFormatNotSupported {
-            url: err.message,
-        },
+        Code::UrlFormatNotSupported => {
+            eleven_barrage_collector::SignatureError::UrlFormatNotSupported { url: err.message }
+        }
         Code::EmptyUrl => eleven_barrage_collector::SignatureError::EmptyUrl,
-        Code::ConfigMissing => eleven_barrage_collector::SignatureError::ConfigMissing {
-            field: err.message,
-        },
+        Code::ConfigMissing => {
+            eleven_barrage_collector::SignatureError::ConfigMissing { field: err.message }
+        }
         Code::CookieExpired => eleven_barrage_collector::SignatureError::CookieExpired,
         Code::AlgorithmChanged => eleven_barrage_collector::SignatureError::AlgorithmChanged,
         Code::RoomNotFound => eleven_barrage_collector::SignatureError::RoomNotFound {
@@ -220,7 +224,9 @@ async fn connect_and_print(
                 break;
             }
             tokio_tungstenite::tungstenite::Message::Ping(data) => {
-                write.send(tokio_tungstenite::tungstenite::Message::Pong(data)).await?;
+                write
+                    .send(tokio_tungstenite::tungstenite::Message::Pong(data))
+                    .await?;
             }
             _ => {}
         }
@@ -235,7 +241,8 @@ mod tests {
 
     #[test]
     fn cli_parses_grab_with_url() {
-        let cli = Cli::try_parse_from(["ebg", "grab", "--url", "https://live.douyin.com/test"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["ebg", "grab", "--url", "https://live.douyin.com/test"]).unwrap();
         match cli.command {
             Some(EbgCommand::Grab { url, .. }) => {
                 assert_eq!(url, "https://live.douyin.com/test");
@@ -256,7 +263,9 @@ mod tests {
         ])
         .unwrap();
         match cli.command {
-            Some(EbgCommand::Grab { url, cookie_file, .. }) => {
+            Some(EbgCommand::Grab {
+                url, cookie_file, ..
+            }) => {
                 assert_eq!(url, "https://live.douyin.com/test");
                 assert_eq!(cookie_file, Some(PathBuf::from("/tmp/cookie.txt")));
             }
@@ -297,7 +306,8 @@ mod tests {
     #[test]
     fn map_proto_error_cookie_expired() {
         let err = eleven_barrage_service::signed_proto::SignatureErrorInfo {
-            code: eleven_barrage_service::signed_proto::signature_error_info::Code::CookieExpired as i32,
+            code: eleven_barrage_service::signed_proto::signature_error_info::Code::CookieExpired
+                as i32,
             retryable: false,
             message: "cookie expired".to_string(),
         };
@@ -309,7 +319,8 @@ mod tests {
     #[test]
     fn map_proto_error_network_transient() {
         let err = eleven_barrage_service::signed_proto::SignatureErrorInfo {
-            code: eleven_barrage_service::signed_proto::signature_error_info::Code::NetworkTransient as i32,
+            code: eleven_barrage_service::signed_proto::signature_error_info::Code::NetworkTransient
+                as i32,
             retryable: true,
             message: "timeout".to_string(),
         };

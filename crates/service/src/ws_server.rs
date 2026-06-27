@@ -188,12 +188,10 @@ mod tests {
         let dispatcher = server.dispatcher();
         let mut rx = dispatcher.subscribe();
 
-        let event = BarrageEvent::ChatMessage(
-            eleven_barrage_core::ChatMessage {
-                content: "hello".to_string(),
-                ..Default::default()
-            },
-        );
+        let event = BarrageEvent::ChatMessage(eleven_barrage_core::ChatMessage {
+            content: "hello".to_string(),
+            ..Default::default()
+        });
 
         dispatcher.dispatch(event.clone()).await;
 

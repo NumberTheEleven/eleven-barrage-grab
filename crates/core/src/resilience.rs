@@ -96,10 +96,7 @@ impl RetryPolicy {
 /// # 返回
 /// - `Ok(T)`：成功
 /// - `Err(E)`：达到最大尝试次数后仍未成功
-pub async fn retry_with_backoff<F, Fut, T, E>(
-    policy: RetryPolicy,
-    mut op: F,
-) -> Result<T, E>
+pub async fn retry_with_backoff<F, Fut, T, E>(policy: RetryPolicy, mut op: F) -> Result<T, E>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,

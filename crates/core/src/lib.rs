@@ -73,7 +73,9 @@ pub(crate) mod rand {
             SEED.with(|seed| {
                 let mut s = seed.get();
                 // simple LCG
-                s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                s = s
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 seed.set(s);
                 let span = range.end() - range.start() + 1;
                 range.start() + (s % span)

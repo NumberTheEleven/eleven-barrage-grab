@@ -10,9 +10,7 @@
 use std::time::Duration;
 
 use eleven_barrage_collector::{ImFetchConfig, ImFetcher};
-use eleven_barrage_service::{
-    AutoSigner, RoomApiConfig, RoomInfoApi, SignedBarrageServiceImpl,
-};
+use eleven_barrage_service::{AutoSigner, RoomApiConfig, RoomInfoApi, SignedBarrageServiceImpl};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -58,9 +56,13 @@ async fn start_mock_http_server() -> u16 {
             let req = String::from_utf8_lossy(&buf[..n]).to_string();
 
             let resp = if req.contains("/webcast/room/web/enter/") {
-                MockResponse::ok(r#"{"data":{"room":{"id_str":"123456789","title":"Test Room","owner":{"nickname":"Tester"},"status":2}}}"#)
+                MockResponse::ok(
+                    r#"{"data":{"room":{"id_str":"123456789","title":"Test Room","owner":{"nickname":"Tester"},"status":2}}}"#,
+                )
             } else if req.contains("/webcast/im/fetch/") {
-                MockResponse::ok(r#"{"wss_url":"wss://mock-wss.local/push","headers":{"X-MS-STUB":"stub123"},"expires_at":9999999999}"#)
+                MockResponse::ok(
+                    r#"{"wss_url":"wss://mock-wss.local/push","headers":{"X-MS-STUB":"stub123"},"expires_at":9999999999}"#,
+                )
             } else {
                 MockResponse::ok(r#"{}"#)
             };
@@ -102,7 +104,9 @@ async fn provide_signed_wss_e2e_returns_material() {
     tokio::spawn(async move {
         let _ = tonic::transport::Server::builder()
             .add_service(server)
-            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(grpc_listener))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(
+                grpc_listener,
+            ))
             .await;
     });
 
@@ -129,7 +133,9 @@ async fn provide_signed_wss_e2e_returns_material() {
         .into_inner();
 
     match response.result {
-        Some(eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Material(m)) => {
+        Some(
+            eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Material(m),
+        ) => {
             assert_eq!(m.url, "wss://mock-wss.local/push");
             assert_eq!(m.headers.get("X-MS-STUB"), Some(&"stub123".to_string()));
             assert_eq!(m.expires_at_unix, 9999999999);
