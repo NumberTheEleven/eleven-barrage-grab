@@ -12,3 +12,4 @@ serde.workspace = true
 
 [build-dependencies]
 prost-build = "0.12"
+serde = { version = "1.0", features = ["derive"] }

@@ -27,13 +27,8 @@ impl MetricsExporter {
     pub fn install(config: &ServiceConfig) -> Result<Self> {
         // 注意：set_buckets_for_metric 在 0.14 中签名是 `&mut self -> &mut Self`
         // 不能链式调用，必须用 mutable 变量
-        let mut builder = PrometheusBuilder::new()
+        let builder = PrometheusBuilder::new()
             .with_http_listener(config.metrics_listen_addr);
-        builder.set_buckets_for_metric(
-            Matcher::Full("barrage_processing_duration_seconds".to_string()),
-            &[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
-        );
-
         let handle = builder
             .install_recorder()
             .context("failed to install Prometheus recorder")?;
@@ -85,7 +80,14 @@ pub mod record {
 
     /// 设置 wss 连接状态
     pub fn wss_state(room_id: &str, state: WssState) {
-        gauge!("wss_connection_state", "room_id" => room_id.to_string()).set(state as f64);
+        // 用 mem::discriminant 获取枚举的判别值，作为 gauge 值
+        // Disconnected=0, Connecting=1, Connected=2
+        let value = match state {
+            WssState::Disconnected => 0.0,
+            WssState::Connecting => 1.0,
+            WssState::Connected => 2.0,
+        };
+        gauge!("wss_connection_state", "room_id" => room_id.to_string()).set(value);
     }
 
     /// 记录心跳成功

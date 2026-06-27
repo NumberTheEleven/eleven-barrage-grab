@@ -101,7 +101,7 @@ impl BarrageEvent {
             BarrageEvent::SocialMessage(m) => m.common.as_ref().map(|c| c.msg_id).unwrap_or(0),
             BarrageEvent::ControlMessage(m) => m.common.as_ref().map(|c| c.msg_id).unwrap_or(0),
             BarrageEvent::RoomUserSeqMessage(m) => m.common.as_ref().map(|c| c.msg_id).unwrap_or(0),
-            BarrageEvent::FansclubMessage(m) => m.common.as_ref().map(|c| c.msg_id).unwrap_or(0),
+            BarrageEvent::FansclubMessage(m) => m.common_info.as_ref().map(|c| c.msg_id).unwrap_or(0),
         }
     }
 
@@ -115,7 +115,7 @@ impl BarrageEvent {
             BarrageEvent::SocialMessage(m) => m.common.as_ref().map(|c| c.create_time).unwrap_or(0),
             BarrageEvent::ControlMessage(m) => m.common.as_ref().map(|c| c.create_time).unwrap_or(0),
             BarrageEvent::RoomUserSeqMessage(m) => m.common.as_ref().map(|c| c.create_time).unwrap_or(0),
-            BarrageEvent::FansclubMessage(m) => m.common.as_ref().map(|c| c.create_time).unwrap_or(0),
+            BarrageEvent::FansclubMessage(m) => m.common_info.as_ref().map(|c| c.create_time).unwrap_or(0),
         }
     }
 

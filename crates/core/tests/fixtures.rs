@@ -1,8 +1,11 @@
 //! 通用测试 fixture — 构造模拟的 Douyin 弹幕协议数据
 
-use eleven_barrage_core::{ChatMessage, GiftMessage, LikeMessage, Message, Response, WssResponse};
-use eleven_barrage_proto as proto;
+use eleven_barrage_core::{ChatMessage, GiftMessage, LikeMessage};
+use eleven_barrage_proto::{Message, Response, WssResponse};
 use prost::Message as ProstMessage;
+
+#[allow(unused_imports)]
+use eleven_barrage_proto as proto;
 
 /// 构造一个不含压缩的完整 WSS 帧（含 N 条消息）
 ///

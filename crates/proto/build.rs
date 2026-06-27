@@ -14,8 +14,8 @@ fn main() -> Result<()> {
         "#[derive(serde::Serialize, serde::Deserialize)] #[serde(default)]",
     );
 
-    // 编译 .proto 文件
-    prost_build::compile_protos(
+    // 编译 .proto 文件（使用自定义 config，不是默认 config）
+    config.compile_protos(
         &[
             "proto/wss.proto",
             "proto/messages.proto",

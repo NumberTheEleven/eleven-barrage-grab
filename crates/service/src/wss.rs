@@ -147,19 +147,19 @@ impl WssConnectionManager {
         }
 
         // 构建 request（tungstenite 0.23 的 Request 类型 = http::Request<()>）
+        // 注：本版本 tungstenite 的 Builder::header() 不可失败
         let mut request_builder = tokio_tungstenite::tungstenite::http::Request::builder()
             .method("GET")
             .uri(&self.config.url);
 
         for (key, value) in &self.config.headers {
             request_builder = request_builder
-                .header(key.as_str(), value.as_str())
-                .context("invalid header value in wss config")?;
+                .header(key.as_str(), value.as_str());
         }
 
         let request = request_builder
             .body(())
-            .context("failed to build wss request")?;
+            .expect("failed to build wss request");
 
         let (ws_stream, response) = connect_async(request)
             .await
@@ -174,8 +174,11 @@ impl WssConnectionManager {
 
         let (mut write, mut read) = ws_stream.split();
 
+        // SplitSink 不实现 Clone，需要 Arc<Mutex<>> 包装以在心跳任务与主循环间共享
+        let shared_write = Arc::new(tokio::sync::Mutex::new(write));
+
         // 启动心跳任务
-        let heartbeat_handle = self.spawn_heartbeat(room_id, write.clone());
+        let heartbeat_handle = self.spawn_heartbeat(room_id, shared_write.clone());
 
         // 主消息循环
         loop {
@@ -301,7 +304,7 @@ impl WssConnectionManager {
     fn spawn_heartbeat(
         &self,
         room_id: &str,
-        mut write: futures::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+        write: Arc<tokio::sync::Mutex<futures::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
     ) -> tokio::task::JoinHandle<()> {
         let interval_secs = self.config.heartbeat_interval_secs;
         let room_id = room_id.to_string();
@@ -315,7 +318,7 @@ impl WssConnectionManager {
                 ticker.tick().await;
 
                 let ping = Message::Ping(Vec::new());
-                match write.send(ping).await {
+                match write.lock().await.send(ping).await {
                     Ok(()) => {
                         record::heartbeat_success(&room_id);
                         debug!(room_id = %room_id, "heartbeat sent");

@@ -7,6 +7,7 @@ mod fixtures;
 use eleven_barrage_core::{
     BarrageEvent, Dispatcher, EventFilter, MsgDedup, SessionFaultDetector, WssDecoder,
 };
+use eleven_barrage_proto::Common;
 
 #[test]
 fn full_pipeline_with_chat_message() {
@@ -104,23 +105,27 @@ fn dispatcher_continues_after_corrupted_message() {
 fn session_fault_triggers_after_consecutive_failures() {
     let detector = SessionFaultDetector::new();
 
-    // 模拟 5 次连续 decoder 错误
+    // 先启动等待任务，确保它在 fault 触发前已就绪
+    let detector_clone = detector.clone();
+    let wait_task = std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            tokio::time::timeout(std::time::Duration::from_millis(500), detector_clone.wait_fault())
+                .await
+        })
+    });
+
+    // 给 wait_fault 一点时间进入等待状态
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    // 模拟 MAX_CONSECUTIVE_ERRORS 次连续 decoder 错误 → 触发 fault
     for _ in 0..5 {
         detector.record_error();
     }
 
-    // 验证 fault detector 已记录（实际触发需要回调）
-    // 这里通过 wait_fault 异步验证
-    let detector_clone = detector.clone();
-    let handle = tokio::runtime::Runtime::new()
-        .unwrap()
-        .spawn(async move {
-            tokio::time::timeout(std::time::Duration::from_millis(100), detector_clone.wait_fault())
-                .await
-        });
-
-    let result = handle.unwrap();
-    assert!(result.is_ok(), "should be notified of fault");
+    // 验证 fault detector 已通过 wait_fault 通知
+    let result = wait_task.join().unwrap();
+    assert!(result.is_ok(), "should be notified of fault within timeout");
 }
 
 #[test]
@@ -217,7 +222,8 @@ fn event_method_is_stable() {
 
 #[test]
 fn msg_id_extraction() {
-    use eleven_barrage_core::{ChatMessage, Common};
+    use eleven_barrage_core::ChatMessage;
+    use eleven_barrage_proto::Common;
 
     let mut chat = ChatMessage::default();
     chat.common = Some(Common {
@@ -231,7 +237,8 @@ fn msg_id_extraction() {
 
 #[test]
 fn timestamp_extraction() {
-    use eleven_barrage_core::{ChatMessage, Common};
+    use eleven_barrage_core::ChatMessage;
+    use eleven_barrage_proto::Common;
 
     let mut chat = ChatMessage::default();
     chat.common = Some(Common {

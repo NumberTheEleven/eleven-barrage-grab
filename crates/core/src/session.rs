@@ -24,11 +24,20 @@ pub struct SessionFaultDetector {
     state: Arc<Inner>,
 }
 
-#[derive(Debug)]
 struct Inner {
     consecutive_errors: AtomicU32,
     fault_notify: Notify,
     fault_callback: Mutex<Option<Arc<dyn Fn(SessionFaultReason) + Send + Sync>>>,
+}
+
+impl std::fmt::Debug for Inner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Inner")
+            .field("consecutive_errors", &self.consecutive_errors)
+            .field("fault_notify", &"Notify")
+            .field("fault_callback", &"<callback>")
+            .finish()
+    }
 }
 
 /// Session 故障原因

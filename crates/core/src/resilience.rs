@@ -27,8 +27,6 @@
 use std::future::Future;
 use std::time::Duration;
 
-use rand::Rng;
-
 /// 重试策略
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {
@@ -83,9 +81,9 @@ impl RetryPolicy {
         let capped = exp_ms.min(max_ms);
 
         if self.jitter {
-            // 加入 0-25% 的随机抖动
+            // 加入 0-25% 的随机抖动（使用 crate 自带的轻量 LCG 随机数）
             let jitter_range = capped / 4;
-            let jitter = rand::thread_rng().gen_range(0..=jitter_range);
+            let jitter = crate::rand::thread_rng().gen_range(0..=jitter_range);
             Duration::from_millis(capped + jitter)
         } else {
             Duration::from_millis(capped)
