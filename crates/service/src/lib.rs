@@ -10,10 +10,12 @@
 //! - [`ws_server`]：WS 下游服务端
 //! - [`watchdog`]：后台健康监控
 //! - [`signer`]：AutoSigner（auto-sign-fetcher 组合 RoomApi + ImFetcher）
+//! - [`grpc_signed`]：SignedBarrageService gRPC 实现（auto-sign R-008）
 
 pub mod api;
 pub mod config;
 pub mod grpc_server;
+pub mod grpc_signed;
 pub mod logging;
 pub mod metrics;
 pub mod room;
@@ -25,6 +27,7 @@ pub mod wss;
 
 pub use api::{RoomInfo, RoomInfoApi};
 pub use config::AppConfig;
+pub use grpc_signed::{SignedBarrageServiceImpl, SignedBarrageServiceServer};
 pub use logging::init as init_logging;
 pub use metrics::{MetricsExporter, WssState};
 pub use room::{RoomManager, SingleRoomManager};
