@@ -24,13 +24,14 @@ use tracing::info;
 use eleven_barrage_core::BarrageEvent;
 
 // 引入 tonic-build 生成的代码
-// .proto 的 package = "barrage"，所以生成模块名为 `barrage`
-pub mod barrage {
-    tonic::include_proto!("barrage");
-}
+// .proto 文件名 `barrage.proto`，package `barrage`
+// tonic::include_proto! 生成模块名为 `barrage`（取自 package）
+tonic::include_proto!("barrage");
 
 use barrage::barrage_service_server::{BarrageService, BarrageServiceServer};
-use barrage::{BarrageEvent as GrpcBarrageEvent, HealthRequest, HealthResponse, SubscribeRequest};
+use barrage::{
+    BarrageEvent as GrpcBarrageEvent, HealthRequest, HealthResponse, SubscribeRequest,
+};
 
 /// gRPC 服务实现
 pub struct BarrageServiceImpl {
