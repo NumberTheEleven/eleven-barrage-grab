@@ -34,6 +34,7 @@ toml.workspace = true
 chrono.workspace = true
 parking_lot.workspace = true
 bytes.workspace = true
+clap.workspace = true
 
 [build-dependencies]
 tonic-build = "0.11"
