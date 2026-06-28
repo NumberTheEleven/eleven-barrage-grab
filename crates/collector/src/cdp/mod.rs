@@ -3,7 +3,8 @@
 pub mod error;
 pub mod commands;
 pub mod frame;
-// pub mod client;    // added in T4
-// pub mod mock;      // added in T4
+pub mod client;
+pub mod mock;
 
 pub use error::{CdpError, Result};
+pub use mock::CdpTransport;

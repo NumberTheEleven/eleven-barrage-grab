@@ -126,14 +126,15 @@ pub struct CdpErrorBody {
     pub message: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateTargetResult {
     pub target_id: String,
 }
 
 // ===== Events =====
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(tag = "method", rename_all = "camelCase")]
 pub enum CdpEvent {
     #[serde(rename = "Network.requestWillBeSent")]
@@ -152,14 +153,14 @@ pub enum CdpEvent {
     Unknown,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestWillBeSentParams {
     pub request_id: String,
     pub request: Request,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Request {
     pub url: String,
     pub method: String,
@@ -167,13 +168,13 @@ pub struct Request {
     pub headers: HashMap<String, String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct AttachedToTargetParams {
     pub session_id: String,
     pub target_info: TargetInfo,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct TargetInfo {
     pub target_id: String,
     #[serde(rename = "type")]
@@ -181,13 +182,13 @@ pub struct TargetInfo {
     pub url: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct DetachedFromTargetParams {
     pub session_id: String,
     pub target_id: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct LoadEventFiredParams {
     pub timestamp: f64,
 }
