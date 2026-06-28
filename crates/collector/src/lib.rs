@@ -76,6 +76,12 @@ pub use url_parser::{parse as parse_url, WebRid};
 pub mod im_fetch;
 pub use im_fetch::{ImFetchConfig, ImFetchResponse, ImFetcher};
 
+/// Chrome DevTools Protocol client + browser-based signer (spec section 1.1)
+pub mod cdp;
+pub mod browser;
+pub mod pool;
+pub mod signer;
+
 /// Collector trait — MVP 仅占位
 #[async_trait::async_trait]
 pub trait Collector: Send + Sync {
