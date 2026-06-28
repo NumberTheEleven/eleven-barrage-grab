@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -40,6 +40,15 @@ pub struct AppConfig {
 
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    #[serde(default)]
+    pub browser: BrowserConfig,
+
+    #[serde(default)]
+    pub rest: RestConfig,
+
+    #[serde(default)]
+    pub signer: SignerConfig,
 }
 
 /// service 主体配置
@@ -192,6 +201,52 @@ pub struct LoggingConfig {
     pub json_format: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserConfig {
+    #[serde(default = "default_edge_path")]
+    pub edge_path: PathBuf,
+
+    #[serde(default = "default_pool_size")]
+    pub pool_size: usize,
+
+    #[serde(default = "default_max_concurrent")]
+    pub max_concurrent_per_browser: usize,
+
+    #[serde(default = "default_sign_timeout")]
+    pub sign_timeout_secs: u64,
+
+    #[serde(default = "default_health_check_interval")]
+    pub health_check_interval_secs: u64,
+
+    #[serde(default = "default_user_data_dir_template")]
+    pub user_data_dir_template: String,
+
+    #[serde(default)]
+    pub extra_args: Vec<String>,
+
+    #[serde(default = "default_cdp_port_base")]
+    pub cdp_port_base: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestConfig {
+    #[serde(default = "default_rest_addr")]
+    pub listen_addr: SocketAddr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignerConfig {
+    #[serde(default = "default_signer_mode_str")]
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignerMode {
+    Browser,
+    Http,
+    Auto,
+}
+
 // 默认值
 fn default_ws_addr() -> SocketAddr {
     "0.0.0.0:8888".parse().unwrap()
@@ -233,6 +288,19 @@ fn default_mitm_proxy_port() -> u16 {
 fn default_log_level() -> String {
     "info".to_string()
 }
+fn default_edge_path() -> PathBuf {
+    PathBuf::from(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
+}
+fn default_pool_size() -> usize { 3 }
+fn default_max_concurrent() -> usize { 2 }
+fn default_sign_timeout() -> u64 { 10 }
+fn default_health_check_interval() -> u64 { 30 }
+fn default_user_data_dir_template() -> String {
+    "./data/browser-{id}".into()
+}
+fn default_cdp_port_base() -> u16 { 9222 }
+fn default_rest_addr() -> SocketAddr { "0.0.0.0:7878".parse().unwrap() }
+fn default_signer_mode_str() -> String { "browser".into() }
 
 impl Default for ServiceConfig {
     fn default() -> Self {
@@ -289,6 +357,33 @@ impl Default for LoggingConfig {
         }
     }
 }
+
+impl Default for BrowserConfig {
+    fn default() -> Self {
+        Self {
+            edge_path: default_edge_path(),
+            pool_size: default_pool_size(),
+            max_concurrent_per_browser: default_max_concurrent(),
+            sign_timeout_secs: default_sign_timeout(),
+            health_check_interval_secs: default_health_check_interval(),
+            user_data_dir_template: default_user_data_dir_template(),
+            extra_args: vec![],
+            cdp_port_base: default_cdp_port_base(),
+        }
+    }
+}
+
+impl Default for RestConfig {
+    fn default() -> Self {
+        Self { listen_addr: default_rest_addr() }
+    }
+}
+
+impl Default for SignerConfig {
+    fn default() -> Self {
+        Self { mode: "browser".into() }
+    }
+}
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -299,6 +394,9 @@ impl Default for AppConfig {
             auth: AuthConfig::default(),
             mitm: MitmConfig::default(),
             logging: LoggingConfig::default(),
+            browser: BrowserConfig::default(),
+            rest: RestConfig::default(),
+            signer: SignerConfig::default(),
         }
     }
 }
@@ -383,6 +481,15 @@ impl AppConfig {
     /// 获取 push_event_methods 列表
     pub fn push_event_methods(&self) -> &[String] {
         &self.events.push_event_methods
+    }
+
+    pub fn signer_mode(&self) -> SignerMode {
+        match self.signer.mode.as_str() {
+            "browser" => SignerMode::Browser,
+            "http" => SignerMode::Http,
+            "auto" => SignerMode::Auto,
+            _ => SignerMode::Browser,
+        }
     }
 }
 
@@ -541,5 +648,89 @@ mod tests {
             sessionid: "y".to_string(),
         };
         assert!(sessionid.has_any());
+    }
+
+    #[test]
+    fn parse_browser_config_section() {
+        let toml = r#"
+            [service]
+            room_id = "test"
+
+            [browser]
+            edge_path = "C:\\Edge\\msedge.exe"
+            pool_size = 5
+            max_concurrent_per_browser = 3
+            sign_timeout_secs = 15
+            health_check_interval_secs = 60
+            user_data_dir_template = "./data/browser-{id}"
+            extra_args = ["--foo", "--bar"]
+            cdp_port_base = 9333
+        "#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.browser.pool_size, 5);
+        assert_eq!(cfg.browser.max_concurrent_per_browser, 3);
+        assert_eq!(cfg.browser.sign_timeout_secs, 15);
+        assert_eq!(cfg.browser.extra_args, vec!["--foo", "--bar"]);
+        assert_eq!(cfg.browser.cdp_port_base, 9333);
+    }
+
+    #[test]
+    fn parse_rest_config_section() {
+        let toml = r#"
+            [service]
+            room_id = "test"
+
+            [rest]
+            listen_addr = "127.0.0.1:9000"
+        "#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.rest.listen_addr.port(), 9000);
+    }
+
+    #[test]
+    fn parse_signer_mode_auto() {
+        let toml = r#"
+            [service]
+            room_id = "test"
+
+            [signer]
+            mode = "auto"
+        "#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert!(matches!(cfg.signer_mode(), SignerMode::Auto));
+    }
+
+    #[test]
+    fn default_browser_config_has_sensible_values() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.browser.pool_size, 3);
+        assert_eq!(cfg.browser.max_concurrent_per_browser, 2);
+        assert_eq!(cfg.browser.sign_timeout_secs, 10);
+        assert_eq!(cfg.browser.cdp_port_base, 9222);
+    }
+
+    #[test]
+    fn default_rest_config_uses_port_7878() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.rest.listen_addr.port(), 7878);
+    }
+
+    #[test]
+    fn default_signer_mode_is_browser() {
+        let cfg = AppConfig::default();
+        assert!(matches!(cfg.signer_mode(), SignerMode::Browser));
+    }
+
+    #[test]
+    fn invalid_signer_mode_defaults_to_browser() {
+        let toml = r#"
+            [service]
+            room_id = "test"
+
+            [signer]
+            mode = "unknown"
+        "#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert!(matches!(cfg.signer_mode(), SignerMode::Browser));
     }
 }
