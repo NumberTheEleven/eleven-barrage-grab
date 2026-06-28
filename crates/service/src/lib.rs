@@ -18,6 +18,7 @@ pub mod grpc_server;
 pub mod grpc_signed;
 pub mod logging;
 pub mod metrics;
+pub mod rest_server;
 pub mod room;
 pub mod run;
 pub mod signer;
