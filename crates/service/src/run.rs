@@ -11,8 +11,8 @@ use tracing::{error, info, warn};
 
 use crate::{
     api::RoomInfoApi, config::AppConfig, grpc_server, logging, metrics::MetricsExporter,
-    room::SingleRoomManager, signer::AutoSigner, watchdog::Watchdog, ws_server::WsServer,
-    wss::WssConnectionManager,
+    rest_server, room::SingleRoomManager, signer::AutoSigner, watchdog::Watchdog,
+    ws_server::WsServer, wss::WssConnectionManager,
 };
 
 #[derive(Parser, Debug)]
@@ -114,6 +114,34 @@ pub async fn run() -> Result<()> {
     // 6. 安装 metrics
     let _metrics_exporter =
         MetricsExporter::install(&config.service).context("failed to install metrics exporter")?;
+
+    // 6b. 启动 BrowserPool (auto-signer)
+    let browser_config = eleven_barrage_collector::pool::BrowserPoolConfig {
+        pool_size: config.browser.pool_size,
+        max_concurrent_per_browser: config.browser.max_concurrent_per_browser,
+        sign_timeout: std::time::Duration::from_secs(config.browser.sign_timeout_secs),
+        health_check_interval: std::time::Duration::from_secs(
+            config.browser.health_check_interval_secs,
+        ),
+        edge_path: config.browser.edge_path.clone(),
+        user_data_dir_template: config.browser.user_data_dir_template.clone(),
+        extra_args: config.browser.extra_args.clone(),
+        cdp_port_base: config.browser.cdp_port_base,
+    };
+    let browser_pool = std::sync::Arc::new(
+        eleven_barrage_collector::pool::BrowserPool::start(browser_config)
+            .await
+            .context("failed to start browser pool")?,
+    );
+
+    // 6c. 启动 REST server task
+    let rest_addr = config.rest.listen_addr;
+    let rest_pool = browser_pool.clone();
+    let _rest_handle = tokio::spawn(async move {
+        if let Err(e) = rest_server::run_rest_server(rest_addr, rest_pool).await {
+            tracing::error!(error = %e, "REST server exited");
+        }
+    });
 
     // 7. 启动 Watchdog
     let watchdog = Watchdog::default();
