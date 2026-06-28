@@ -24,6 +24,17 @@ enum EbgCommand {
     /// 启动 service daemon（沿用 custom-barrage 行为）
     Start,
 
+    /// 调用 REST /v1/sign 并输出 JSON（推荐：服务必须已启动）
+    Sign {
+        /// 抖音直播间 URL
+        #[arg(long)]
+        url: String,
+
+        /// REST 服务地址
+        #[arg(long, default_value = "http://127.0.0.1:7878")]
+        rest_addr: String,
+    },
+
     /// 自动签名并获取弹幕流（R-007 / R-005）
     ///
     /// 用户提供抖音直播间 URL，服务自动调用 room_info + im_fetch 拿到签名后的 wss URL，
@@ -59,6 +70,13 @@ async fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        Some(EbgCommand::Sign { url, rest_addr }) => match run_sign(&url, &rest_addr).await {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                ExitCode::FAILURE
+            }
+        },
         Some(EbgCommand::Grab {
             url,
             cookie_file,
@@ -100,6 +118,24 @@ async fn run_grab(
         });
     }
 
+    Ok(())
+}
+
+/// ebg sign 实现：调用 REST /v1/sign 并输出 JSON
+async fn run_sign(url: &str, rest_addr: &str) -> anyhow::Result<()> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/v1/sign", rest_addr))
+        .json(&serde_json::json!({ "url": url }))
+        .send()
+        .await?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await?;
+    if !status.is_success() {
+        eprintln!("HTTP {}: {}", status, serde_json::to_string_pretty(&body)?);
+        anyhow::bail!("sign request failed");
+    }
+    println!("{}", serde_json::to_string_pretty(&body)?);
     Ok(())
 }
 
@@ -314,6 +350,16 @@ mod tests {
         let mapped = map_proto_error(err);
         assert_eq!(mapped.code(), "COOKIE_EXPIRED");
         assert!(!mapped.retryable());
+    }
+
+    #[test]
+    fn cli_parses_sign_with_url() {
+        let cli =
+            Cli::try_parse_from(["ebg", "sign", "--url", "https://live.douyin.com/123"]).unwrap();
+        match cli.command {
+            Some(EbgCommand::Sign { url, .. }) => assert_eq!(url, "https://live.douyin.com/123"),
+            _ => panic!("expected Sign command"),
+        }
     }
 
     #[test]
