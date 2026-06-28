@@ -2,7 +2,7 @@
 
 pub mod error;
 pub mod commands;
-// pub mod frame;     // added in T3
+pub mod frame;
 // pub mod client;    // added in T4
 // pub mod mock;      // added in T4
 
