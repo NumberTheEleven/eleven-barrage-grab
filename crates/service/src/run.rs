@@ -11,7 +11,7 @@ use tracing::{error, info, warn};
 
 use crate::{
     api::RoomInfoApi, config::AppConfig, grpc_server, logging, metrics::MetricsExporter,
-    rest_server, room::SingleRoomManager, signer::AutoSigner, watchdog::Watchdog,
+    rest_server, room::SingleRoomManager, watchdog::Watchdog,
     ws_server::WsServer, wss::WssConnectionManager,
 };
 
@@ -193,21 +193,14 @@ pub async fn run() -> Result<()> {
         })
     };
 
-    // 13. 启动 gRPC 服务端 task（带上游事件源 + AutoSigner）
+    // 13. 启动 gRPC 服务端 task（带上游事件源 + BrowserPool）
     let grpc_addr = config.service.grpc_listen_addr;
-    let room_api = RoomInfoApi::new(config.room_api.clone())
-        .context("failed to create room info API client")?;
-    let im_config = eleven_barrage_collector::ImFetchConfig::default();
-    let signer = AutoSigner::from_configs(room_api, im_config, config.auth.clone())?;
     let (grpc_event_tx, grpc_event_rx) = mpsc::channel::<eleven_barrage_core::BarrageEvent>(1024);
     drop(grpc_event_tx);
+    let grpc_pool = browser_pool.clone();
     let grpc_handle = tokio::spawn(async move {
-        if let Err(e) = grpc_server::run_grpc_server_with_source_and_signer(
-            grpc_addr,
-            grpc_event_rx,
-            Some(signer),
-        )
-        .await
+        if let Err(e) = grpc_server::run_grpc_server_with_pool(grpc_addr, grpc_event_rx, grpc_pool)
+            .await
         {
             error!(error = %e, "gRPC server exited with error");
         }

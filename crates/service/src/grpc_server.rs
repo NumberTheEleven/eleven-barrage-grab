@@ -127,19 +127,19 @@ fn convert_barrage_event_to_grpc(event: CoreBarrageEvent) -> GrpcBarrageEvent {
     }
 }
 
-/// 运行 gRPC 服务端（带上游事件源 + AutoSigner）
+/// 运行 gRPC 服务端（带上游事件源 + BrowserPool）
 pub async fn run_grpc_server_with_source_and_signer(
     addr: SocketAddr,
     event_source: mpsc::Receiver<CoreBarrageEvent>,
-    signer: Option<crate::AutoSigner>,
+    pool: Option<std::sync::Arc<eleven_barrage_collector::pool::BrowserPool>>,
 ) -> Result<()> {
     info!(addr = %addr, "gRPC server starting (with upstream source + signer)");
 
     let barrage_service = BarrageServiceImpl::new(event_source);
     let server = Server::builder().add_service(BarrageServiceServer::new(barrage_service));
 
-    let server = if let Some(signer) = signer {
-        let signed_service = crate::SignedBarrageServiceImpl::new(signer);
+    let server = if let Some(pool) = pool {
+        let signed_service = crate::SignedBarrageServiceImpl::new(pool);
         server.add_service(signed_service.into_server())
     } else {
         server
@@ -155,6 +155,25 @@ pub async fn run_grpc_server(addr: SocketAddr) -> Result<()> {
     let (tx, rx) = mpsc::channel::<CoreBarrageEvent>(1024);
     drop(tx);
     run_grpc_server_with_source_and_signer(addr, rx, None).await
+}
+
+/// 运行 gRPC 服务端（带上游事件源 + BrowserPool）
+pub async fn run_grpc_server_with_pool(
+    addr: SocketAddr,
+    event_source: mpsc::Receiver<CoreBarrageEvent>,
+    pool: std::sync::Arc<eleven_barrage_collector::pool::BrowserPool>,
+) -> Result<()> {
+    info!(addr = %addr, "gRPC server starting (with upstream source + browser pool)");
+
+    let barrage_service = BarrageServiceImpl::new(event_source);
+    let signed_service = crate::SignedBarrageServiceImpl::new(pool);
+    let server = Server::builder()
+        .add_service(BarrageServiceServer::new(barrage_service))
+        .add_service(signed_service.into_server());
+
+    server.serve(addr).await.context("gRPC server error")?;
+
+    Ok(())
 }
 
 /// 运行 gRPC 服务端（带上游事件源）

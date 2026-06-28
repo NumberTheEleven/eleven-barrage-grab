@@ -107,7 +107,7 @@ pub async fn sign(
 
     let material = pool.sign(&web_rid).await.map_err(|e| match e {
         PoolError::Busy => ApiError::PoolBusy,
-        PoolError::Sign(msg) if msg.contains("Timeout") => ApiError::WssTimeout,
+        PoolError::Sign(msg) if msg.contains("timed out") => ApiError::WssTimeout,
         PoolError::Sign(msg) if msg.contains("NoWssCaptured") => ApiError::NoWssCaptured,
         PoolError::Sign(msg) => ApiError::SignFailed(msg),
         PoolError::Browser(_) => ApiError::BrowserDead,

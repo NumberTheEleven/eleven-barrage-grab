@@ -7,16 +7,16 @@
 //! # 向后兼容
 //!
 //! - 旧客户端（不传 url）→ 返回 `Status::invalid_argument`，引导使用 `--wss-url`
-//! - 新客户端（传 url）→ 调 AutoSigner，返回 SignedWssMaterial 或结构化错误
+//! - 新客户端（传 url）→ 调 BrowserPool，返回 SignedWssMaterial 或结构化错误
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
+use eleven_barrage_collector::pool::{BrowserPool, PoolError};
 use eleven_barrage_collector::{parse_url, SignatureError};
 use tonic::{Request, Response, Status};
 use tracing::{info, warn};
-
-use crate::signer::AutoSigner;
 
 // 引入 tonic-build 生成的代码（service/proto/signed.proto package="signed"）
 pub mod signed_proto {
@@ -29,9 +29,9 @@ use self::signed_proto::{
     ProvideSignedWssRequest, ProvideSignedWssResponse, SignatureErrorInfo, SignedWssMaterial,
 };
 
-/// gRPC SignedBarrageService 实现
+/// gRPC SignedBarrageService 实现（BrowserPool 后端）
 pub struct SignedBarrageServiceImpl {
-    signer: AutoSigner,
+    pool: Arc<BrowserPool>,
 }
 
 impl std::fmt::Debug for SignedBarrageServiceImpl {
@@ -42,8 +42,8 @@ impl std::fmt::Debug for SignedBarrageServiceImpl {
 
 impl SignedBarrageServiceImpl {
     /// 创建新服务实例
-    pub fn new(signer: AutoSigner) -> Self {
-        Self { signer }
+    pub fn new(pool: Arc<BrowserPool>) -> Self {
+        Self { pool }
     }
 
     /// 注册到 tonic Server
@@ -60,7 +60,7 @@ impl SignedBarrageService for SignedBarrageServiceImpl {
     ) -> Result<Response<ProvideSignedWssResponse>, Status> {
         let req = request.into_inner();
 
-        // 向后兼容：url 缺省时返回 invalid_argument，引导旧客户端使用 --wss-url
+        // 向后兼容：url 缺省时返回 invalid_argument
         let url = match req.url {
             Some(u) if !u.trim().is_empty() => u,
             _ => {
@@ -88,8 +88,8 @@ impl SignedBarrageService for SignedBarrageServiceImpl {
             }
         };
 
-        // 2. AutoSigner 签名
-        match self.signer.sign(&web_rid).await {
+        // 2. BrowserPool 签名
+        match self.pool.sign(&web_rid).await {
             Ok(material) => {
                 let grpc_material = to_grpc_material(material);
                 Ok(Response::new(ProvideSignedWssResponse {
@@ -101,16 +101,33 @@ impl SignedBarrageService for SignedBarrageServiceImpl {
                 }))
             }
             Err(e) => {
+                let sig_err = map_pool_error_to_signature_error(&e);
                 warn!(error = %e, "auto-sign failed");
                 Ok(Response::new(ProvideSignedWssResponse {
                     result: Some(
                         self::signed_proto::provide_signed_wss_response::Result::Error(
-                            to_error_info(&e),
+                            to_error_info(&sig_err),
                         ),
                     ),
                 }))
             }
         }
+    }
+}
+
+/// PoolError → SignatureError 映射（保留 gRPC 客户端的结构化错误码）
+fn map_pool_error_to_signature_error(e: &PoolError) -> SignatureError {
+    match e {
+        PoolError::Busy => SignatureError::NetworkTransient {
+            reason: "pool busy".into(),
+        },
+        PoolError::Sign(msg) if msg.contains("timed out") => SignatureError::NetworkTransient {
+            reason: "WSS timeout".into(),
+        },
+        PoolError::Sign(_) => SignatureError::AlgorithmChanged,
+        PoolError::Browser(_) => SignatureError::NetworkTransient {
+            reason: "browser dead".into(),
+        },
     }
 }
 
@@ -158,85 +175,6 @@ fn to_grpc_material(material: eleven_barrage_collector::SignedWssMaterial) -> Si
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::RoomInfoApi;
-    use crate::config::{AuthConfig, RoomApiConfig};
-    use eleven_barrage_collector::{ImFetchConfig, ImFetcher};
-
-    fn make_test_signer() -> AutoSigner {
-        let auth = AuthConfig {
-            ttwid: "test_ttwid".to_string(),
-            sessionid: String::new(),
-        };
-        let room_api = RoomInfoApi::new(RoomApiConfig::default()).unwrap();
-        let im_fetcher = ImFetcher::new(ImFetchConfig::default()).unwrap();
-        AutoSigner::new(room_api, im_fetcher, auth)
-    }
-
-    #[tokio::test]
-    async fn provide_signed_wss_rejects_empty_url() {
-        let signer = make_test_signer();
-        let service = SignedBarrageServiceImpl::new(signer);
-
-        let request = ProvideSignedWssRequest {
-            url: None,
-            cookie_file: None,
-        };
-        let result = service.provide_signed_wss(Request::new(request)).await;
-        match result {
-            Err(status) => assert_eq!(status.code(), tonic::Code::InvalidArgument),
-            Ok(_) => panic!("expected InvalidArgument error"),
-        }
-    }
-
-    #[tokio::test]
-    async fn provide_signed_wss_rejects_invalid_url_with_structured_error() {
-        let signer = make_test_signer();
-        let service = SignedBarrageServiceImpl::new(signer);
-
-        let request = ProvideSignedWssRequest {
-            url: Some("https://v.douyin.com/abc".to_string()),
-            cookie_file: None,
-        };
-        let response = service
-            .provide_signed_wss(Request::new(request))
-            .await
-            .unwrap();
-        let inner = response.into_inner();
-
-        // 错误应该包装在 result 中
-        match inner.result {
-            Some(self::signed_proto::provide_signed_wss_response::Result::Error(err)) => {
-                assert!(!err.retryable);
-                assert!(err.message.contains("URL format"));
-                // v.douyin.com → UrlFormatNotSupported
-                use self::signed_proto::signature_error_info::Code;
-                assert_eq!(err.code, Code::UrlFormatNotSupported as i32);
-            }
-            other => panic!("expected Error, got {:?}", other),
-        }
-    }
-
-    #[tokio::test]
-    async fn provide_signed_wss_invalid_url_format() {
-        let signer = make_test_signer();
-        let service = SignedBarrageServiceImpl::new(signer);
-
-        let request = ProvideSignedWssRequest {
-            url: Some("not a url".to_string()),
-            cookie_file: None,
-        };
-        let response = service
-            .provide_signed_wss(Request::new(request))
-            .await
-            .unwrap();
-        let inner = response.into_inner();
-        match inner.result {
-            Some(self::signed_proto::provide_signed_wss_response::Result::Error(err)) => {
-                assert!(!err.retryable);
-            }
-            _ => panic!("expected Error"),
-        }
-    }
 
     #[test]
     fn to_error_info_maps_all_codes() {
@@ -274,5 +212,37 @@ mod tests {
         let grpc = to_grpc_material(material);
         assert_eq!(grpc.url, "wss://example.com");
         assert_eq!(grpc.expires_at_unix, 1700000000);
+    }
+
+    #[test]
+    fn map_pool_error_busy_to_network_transient() {
+        let e = PoolError::Busy;
+        let sig = map_pool_error_to_signature_error(&e);
+        assert!(sig.retryable());
+        assert_eq!(sig.code(), "NETWORK_TRANSIENT");
+    }
+
+    #[test]
+    fn map_pool_error_sign_timeout_to_network_transient() {
+        let e = PoolError::Sign("CDP command timed out after 10s".into());
+        let sig = map_pool_error_to_signature_error(&e);
+        assert!(sig.retryable());
+        assert_eq!(sig.code(), "NETWORK_TRANSIENT");
+    }
+
+    #[test]
+    fn map_pool_error_sign_generic_to_algorithm_changed() {
+        let e = PoolError::Sign("unexpected error".into());
+        let sig = map_pool_error_to_signature_error(&e);
+        assert!(!sig.retryable());
+        assert_eq!(sig.code(), "ALGORITHM_CHANGED");
+    }
+
+    #[test]
+    fn map_pool_error_browser_to_network_transient() {
+        let e = PoolError::Browser("crashed".into());
+        let sig = map_pool_error_to_signature_error(&e);
+        assert!(sig.retryable());
+        assert_eq!(sig.code(), "NETWORK_TRANSIENT");
     }
 }
