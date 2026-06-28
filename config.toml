@@ -1,0 +1,33 @@
+# 临时配置：手动注入 ttwid 测试（来自 DevTools 复制的 URL 编码值）
+[service]
+room_id = "664637748606"
+
+# WS / gRPC / metrics 监听地址（保持默认）
+ws_listen_addr = "0.0.0.0:8888"
+grpc_listen_addr = "0.0.0.0:50051"
+metrics_listen_addr = "0.0.0.0:9090"
+
+[wss]
+# 走 auto-sign 路径，wss.url 留空
+url = ""
+heartbeat_interval_secs = 5
+
+[events]
+push_event_methods = [
+    "WebcastChatMessage",
+    "WebcastGiftMessage",
+    "WebcastLikeMessage",
+]
+
+[room_api]
+cookie = ""
+enabled = false   # 关闭 room_info 启动调用，让 AutoSigner 走完整路径
+
+# 关键：注入的 ttwid
+[auth]
+ttwid = "1%7CNEDLo3vQLdD-FWpb_g8EvYEs8KqxnicN42v5Df_sSTg%7C1782597886%7C6ee5ae6f299641303f42f0d93f58ab52b1d5299bc2dcb504c15ad267d8315c32"
+sessionid = ""
+
+[logging]
+level = "info"
+json_format = false
