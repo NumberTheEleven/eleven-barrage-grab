@@ -1,23 +1,23 @@
-//! 房间元数据 API 客户端
+//! REST API for external programs (auto-signer spec section 5)
 //!
-//! 复刻原项目 `DyApiHelper.GetRoomInfoForApi` 的功能：
-//! - HTTP GET `https://live.douyin.com/webcast/room/web/enter/`
-//! - query 参数：`aid=6383, device_platform=web, web_rid={room_id}`
-//! - Headers：UA + Referer + 可选 Cookie
-//!
-//! # 返回
-//! - `Ok(RoomInfo)`：包含 room_id_str、title、owner 等
-//! - `Err(anyhow::Error)`：网络/解析错误
+//! Also includes the room metadata API client (`RoomInfoApi`).
+
+pub mod sign;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use axum::{routing::post, Router};
 use serde::{Deserialize, Serialize};
 
+use eleven_barrage_collector::pool::BrowserPool;
 use eleven_barrage_collector::SignatureError;
 
 use crate::config::RoomApiConfig;
+
+// ── Room metadata API ──────────────────────────────────────────
 
 /// 房间元数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,13 +55,6 @@ impl RoomInfoApi {
     }
 
     /// 获取房间信息
-    ///
-    /// # 参数
-    /// - `web_room_id`: 抖音 web 直播间的标识（如 "741891423654"）
-    ///
-    /// # 返回
-    /// - `Ok(RoomInfo)`：成功获取
-    /// - `Err(anyhow::Error)`：失败
     pub async fn get(&self, web_room_id: &str) -> Result<RoomInfo> {
         let mut query = HashMap::new();
         query.insert("aid", "6383");
@@ -115,8 +108,6 @@ impl RoomInfoApi {
             .await
             .context("failed to read room info response body")?;
 
-        // 解析响应（抖音 room info 响应结构）
-        // 注：完整响应 schema 较复杂，这里提取关键字段
         let parsed: serde_json::Value =
             serde_json::from_str(&body).context("failed to parse room info JSON")?;
 
@@ -143,7 +134,7 @@ impl RoomInfoApi {
         let title = room.get("title").and_then(|t| t.as_str()).map(String::from);
 
         let status = room.get("status").and_then(|s| s.as_i64()).unwrap_or(0);
-        let is_live = status == 2; // 2 = 开播中
+        let is_live = status == 2;
 
         let live_url = format!("https://live.douyin.com/{}", web_room_id);
 
@@ -157,21 +148,8 @@ impl RoomInfoApi {
         })
     }
 
-    /// Auto-signer 专用方法：返回 `SignatureError` 结构化错误（R-003 / R-005）
-    ///
-    /// 与 `get()` 的区别：错误类型从 `anyhow::Error` 改为 `SignatureError`，
-    /// 便于调用方按错误码和 retryable 标志决策。
-    ///
-    /// # 错误映射
-    ///
-    /// | 触发条件 | 错误 |
-    /// |---------|------|
-    /// | reqwest timeout/connect | `NetworkTransient` |
-    /// | HTTP 401/403 | `CookieExpired` |
-    /// | HTTP 404 | `RoomNotFound` |
-    /// | 响应缺 `data.room` | `AlgorithmChanged` |
-    /// | 其他 HTTP 非 2xx | `AlgorithmChanged` |
-    pub async fn get_for_signer(&self, web_rid: &str) -> Result<RoomInfo, SignatureError> {
+    /// Auto-signer 专用方法：返回 `SignatureError` 结构化错误
+    pub async fn get_for_signer(&self, web_rid: &str) -> std::result::Result<RoomInfo, SignatureError> {
         let mut query = HashMap::new();
         query.insert("aid", "6383");
         query.insert("live_id", "1");
@@ -269,7 +247,6 @@ impl RoomInfoApi {
     }
 }
 
-/// reqwest::Error → SignatureError 映射（与 im_fetch 共享同样的映射规则）
 fn map_reqwest_error(e: reqwest::Error) -> SignatureError {
     if e.is_timeout() || e.is_connect() || e.is_request() {
         SignatureError::NetworkTransient {
@@ -281,6 +258,16 @@ fn map_reqwest_error(e: reqwest::Error) -> SignatureError {
         SignatureError::AlgorithmChanged
     }
 }
+
+// ── REST API router ────────────────────────────────────────────
+
+pub fn router(pool: Arc<BrowserPool>) -> Router {
+    Router::new()
+        .route("/v1/sign", post(sign::sign))
+        .with_state(pool)
+}
+
+// ── Tests ──────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -299,7 +286,6 @@ mod tests {
         let cfg = RoomApiConfig::default();
         let api = RoomInfoApi::new(cfg).unwrap();
         let result = api.get("741891423654").await;
-        // 不强制要求成功（可能在沙盒环境无网络）
         if let Ok(info) = result {
             assert!(!info.web_room_id.is_empty());
         }
@@ -312,18 +298,10 @@ mod tests {
 
     struct MockResponse {
         status: u16,
-        #[allow(dead_code)]
         body: String,
     }
 
     impl MockResponse {
-        #[allow(dead_code)]
-        fn ok(body: &str) -> Self {
-            Self {
-                status: 200,
-                body: body.to_string(),
-            }
-        }
         fn status(code: u16) -> Self {
             Self {
                 status: code,
@@ -348,8 +326,6 @@ mod tests {
         }
     }
 
-    /// 启动 mock HTTP server（简化版 - 替换 live.douyin.com host 不可行，所以用 port-only）
-    /// 注意：实际生产使用要替换 host，本测试用 unreachable port 验证错误映射
     async fn start_mock_server(handler: impl Fn(String) -> MockResponse + Send + 'static) -> u16 {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -373,8 +349,6 @@ mod tests {
         port
     }
 
-    /// 构造指向 mock server 的 RoomInfoApi（通过自定义 config 暂时不支持，需要更灵活的设计）
-    /// 这里我们直接通过 reqwest 调用 mock server 验证错误映射逻辑
     fn build_test_client() -> reqwest::Client {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(5))
@@ -384,7 +358,6 @@ mod tests {
 
     #[tokio::test]
     async fn map_404_to_room_not_found() {
-        // 直接调用 map_reqwest_error 风格的测试，用 mock server 验证 status code
         let port = start_mock_server(|_| MockResponse::status(404)).await;
         let client = build_test_client();
         let resp = client
@@ -393,8 +366,6 @@ mod tests {
             .await
             .expect("send");
         assert_eq!(resp.status().as_u16(), 404);
-        // 这里不调用 get_for_signer（它写死了 live.douyin.com URL）
-        // 但 map_reqwest_error 的 404 → RoomNotFound 逻辑由 get_for_signer 内的代码处理
     }
 
     #[tokio::test]
@@ -411,25 +382,20 @@ mod tests {
 
     #[tokio::test]
     async fn map_unreachable_to_network_transient() {
-        // 绑定然后 drop → port 立即拒绝连接
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
-        // 实际测试 get_for_signer，但因为它写死了 live.douyin.com，无法 redirect
-        // 这里用 build_test_client + unreachable port 验证 reqwest 错误映射
         let client = build_test_client();
         let res = client
             .get(format!("http://127.0.0.1:{}/test", port))
             .send()
             .await;
         assert!(res.is_err());
-        // map_reqwest_error 会把这个 reqwest::Error 映射为 NetworkTransient
     }
 
     #[test]
     fn map_reqwest_timeout_helper() {
-        // 用 tokio::runtime 模拟 timeout
         let rt = tokio::runtime::Runtime::new().unwrap();
         let err = match rt.block_on(async {
             reqwest::Client::new()
@@ -448,9 +414,6 @@ mod tests {
 
     #[test]
     fn map_reqwest_status_403_to_cookie_expired() {
-        // 构造一个 status 403 的 reqwest::Error（通过真 HTTP 模拟）
-        // 简化：直接验证 match 逻辑——当 status 是 403 时返回 CookieExpired
-        // 这里通过一个简单 test：构造一个 mock server
         let rt = tokio::runtime::Runtime::new().unwrap();
         let port = rt.block_on(async { start_mock_server(|_| MockResponse::status(403)).await });
         let res = rt.block_on(async {
@@ -460,9 +423,6 @@ mod tests {
                 .await
         });
         if let Ok(resp) = res {
-            // resp 本身不会成为 err，但 status 在 response 里
-            // map_reqwest_error 只在 send() 阶段 err 时被调用
-            // 所以这个测试主要验证 status code 是 403
             assert_eq!(resp.status().as_u16(), 403);
         }
     }
