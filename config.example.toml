@@ -58,3 +58,43 @@ level = "info"
 
 # 是否使用 JSON 格式（生产推荐）
 json_format = false
+
+# Browser-based signer config (auto-signer)
+[browser]
+# Edge path (Windows default; Linux/Mac auto-detect in v2)
+edge_path = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+
+# Pool size: number of Edge processes
+pool_size = 3
+
+# Concurrent sign requests per browser
+max_concurrent_per_browser = 2
+
+# Timeout for capturing WSS request after navigation
+sign_timeout_secs = 10
+
+# Health check interval (browser alive check)
+health_check_interval_secs = 30
+
+# User data directory template ({id} substituted with browser index)
+user_data_dir_template = "./data/browser-{id}"
+
+# Extra Edge args (anti-detection)
+extra_args = [
+    "--headless=new",
+    "--disable-blink-features=AutomationControlled",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--window-size=1920,1080",
+]
+
+# CDP port base (each browser gets port_base + id)
+cdp_port_base = 9222
+
+# REST API config
+[rest]
+listen_addr = "0.0.0.0:7878"
+
+# Signer mode: "browser" (default), "http" (legacy ImFetcher), "auto" (fallback)
+[signer]
+mode = "browser"
