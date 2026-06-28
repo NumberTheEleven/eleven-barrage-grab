@@ -11,6 +11,8 @@ name = "eleven-barrage-grab"
 path = "src/main.rs"
 
 [dependencies]
+axum = "0.7"
+tower = "0.4"
 eleven-barrage-proto.workspace = true
 eleven-barrage-core.workspace = true
 eleven-barrage-collector = { path = "../collector" }
