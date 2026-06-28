@@ -76,7 +76,7 @@ pub async fn extract_wss(
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err(CdpError::Timeout(timeout));
+            return Err(CdpError::NoWssCaptured);
         }
         let evt = tokio::time::timeout(remaining, events.recv()).await;
         match evt {
@@ -93,7 +93,7 @@ pub async fn extract_wss(
             }
             Ok(Ok(_)) => continue,    // other events, keep waiting
             Ok(Err(_)) => continue,   // broadcast lag, keep waiting
-            Err(_) => return Err(CdpError::Timeout(timeout)),
+            Err(_) => return Err(CdpError::NoWssCaptured),
         }
     }
 }

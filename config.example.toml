@@ -95,6 +95,6 @@ cdp_port_base = 9222
 [rest]
 listen_addr = "0.0.0.0:7878"
 
-# Signer mode: "browser" (default), "http" (legacy ImFetcher), "auto" (fallback)
+# Signer mode (reserved; only "browser" is currently supported)
 [signer]
 mode = "browser"

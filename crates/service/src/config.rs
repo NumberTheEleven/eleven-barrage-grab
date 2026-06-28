@@ -243,8 +243,6 @@ pub struct SignerConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignerMode {
     Browser,
-    Http,
-    Auto,
 }
 
 // 默认值
@@ -467,12 +465,7 @@ impl AppConfig {
     }
 
     pub fn signer_mode(&self) -> SignerMode {
-        match self.signer.mode.as_str() {
-            "browser" => SignerMode::Browser,
-            "http" => SignerMode::Http,
-            "auto" => SignerMode::Auto,
-            _ => SignerMode::Browser,
-        }
+        SignerMode::Browser
     }
 }
 
@@ -671,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_signer_mode_auto() {
+    fn parse_signer_mode_always_returns_browser() {
         let toml = r#"
             [service]
             room_id = "test"
@@ -680,7 +673,7 @@ mod tests {
             mode = "auto"
         "#;
         let cfg: AppConfig = toml::from_str(toml).unwrap();
-        assert!(matches!(cfg.signer_mode(), SignerMode::Auto));
+        assert!(matches!(cfg.signer_mode(), SignerMode::Browser));
     }
 
     #[test]

@@ -19,6 +19,9 @@ pub enum CdpError {
 
     #[error("JSON parse error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("NoWssCaptured: navigation completed but no WSS push URL was captured")]
+    NoWssCaptured,
 }
 
 pub type Result<T> = std::result::Result<T, CdpError>;

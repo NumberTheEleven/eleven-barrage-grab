@@ -55,6 +55,18 @@ pub enum PoolError {
     Browser(String),
 }
 
+impl PoolError {
+    /// Returns true if this error represents a timeout during signing.
+    pub fn is_timeout(&self) -> bool {
+        matches!(self, PoolError::Sign(msg) if msg.contains("timed out"))
+    }
+
+    /// Returns true if the page navigated but no WSS push URL was captured.
+    pub fn is_no_wss_captured(&self) -> bool {
+        matches!(self, PoolError::Sign(msg) if msg.contains("NoWssCaptured"))
+    }
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct BrowserHealth {
     pub id: usize,
@@ -79,7 +91,7 @@ pub struct BrowserHandle {
 
 pub struct BrowserInner {
     pub browser: tokio::sync::Mutex<Browser>,
-    pub cdp: CdpClient,
+    pub cdp: tokio::sync::RwLock<CdpClient>,
     pub last_sign: tokio::sync::Mutex<Option<Instant>>,
 }
 
@@ -117,7 +129,7 @@ impl BrowserPool {
                 semaphore: Arc::new(Semaphore::new(config.max_concurrent_per_browser)),
                 inner: Arc::new(BrowserInner {
                     browser: tokio::sync::Mutex::new(browser),
-                    cdp,
+                    cdp: tokio::sync::RwLock::new(cdp),
                     last_sign: tokio::sync::Mutex::new(None),
                 }),
             });
@@ -165,15 +177,19 @@ impl BrowserPool {
     ) -> Result<SignedWssMaterial, PoolError> {
         *handle.inner.last_sign.lock().await = Some(Instant::now());
 
+        // Hold a read lock on cdp for the entire signing workflow.
+        // The write lock is only taken briefly during health-check restarts.
+        let cdp = handle.inner.cdp.read().await;
+
         // Acquire a fresh tab
-        let tab = acquire_tab(&handle.inner.cdp)
+        let tab = acquire_tab(&cdp)
             .await
             .map_err(|e| PoolError::Sign(e.to_string()))?;
 
-        let events = handle.inner.cdp.subscribe_session(&tab.session_id);
+        let events = cdp.subscribe_session(&tab.session_id);
 
         let result = extract_wss(
-            &handle.inner.cdp,
+            &cdp,
             &tab.session_id,
             web_rid,
             self.config.sign_timeout,
@@ -182,7 +198,7 @@ impl BrowserPool {
         .await;
 
         // Cleanup tab regardless of result
-        let _ = close_tab(&handle.inner.cdp, &tab.target_id).await;
+        let _ = close_tab(&cdp, &tab.target_id).await;
 
         result.map_err(|e| PoolError::Sign(e.to_string()))
     }
@@ -303,8 +319,23 @@ async fn health_check_loop(pool: Arc<BrowserPool>) {
                 match Browser::spawn(browser_config) {
                     Ok(mut new_browser) => match new_browser.discover_cdp_url().await {
                         Ok(_) => {
-                            tracing::info!(browser_id = h.id, "browser restarted");
-                            *browser = new_browser;
+                            let ws_url = new_browser.cdp_ws_url.clone();
+                            match CdpClient::connect(&ws_url).await {
+                                Ok((new_cdp, _global_events)) => {
+                                    let mut cdp = h.inner.cdp.write().await;
+                                    *cdp = new_cdp;
+                                    *browser = new_browser;
+                                    tracing::info!(browser_id = h.id, "browser restarted");
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        browser_id = h.id,
+                                        error = %e,
+                                        "restart CDP connect failed"
+                                    );
+                                    let _ = new_browser.kill();
+                                }
+                            }
                         }
                         Err(e) => tracing::error!(
                             browser_id = h.id,

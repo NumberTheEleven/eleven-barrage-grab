@@ -117,12 +117,14 @@ impl SignedBarrageService for SignedBarrageServiceImpl {
 
 /// PoolError → SignatureError 映射（保留 gRPC 客户端的结构化错误码）
 fn map_pool_error_to_signature_error(e: &PoolError) -> SignatureError {
+    if e.is_timeout() {
+        return SignatureError::NetworkTransient {
+            reason: "WSS timeout".into(),
+        };
+    }
     match e {
         PoolError::Busy => SignatureError::NetworkTransient {
             reason: "pool busy".into(),
-        },
-        PoolError::Sign(msg) if msg.contains("timed out") => SignatureError::NetworkTransient {
-            reason: "WSS timeout".into(),
         },
         PoolError::Sign(_) => SignatureError::AlgorithmChanged,
         PoolError::Browser(_) => SignatureError::NetworkTransient {

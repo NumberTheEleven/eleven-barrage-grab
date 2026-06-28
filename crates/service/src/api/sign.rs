@@ -105,12 +105,18 @@ pub async fn sign(
 ) -> Result<Json<SignResponse>, ApiError> {
     let web_rid = parse_url(&req.url).map_err(|e| ApiError::InvalidUrl(e.to_string()))?;
 
-    let material = pool.sign(&web_rid).await.map_err(|e| match e {
-        PoolError::Busy => ApiError::PoolBusy,
-        PoolError::Sign(msg) if msg.contains("timed out") => ApiError::WssTimeout,
-        PoolError::Sign(msg) if msg.contains("NoWssCaptured") => ApiError::NoWssCaptured,
-        PoolError::Sign(msg) => ApiError::SignFailed(msg),
-        PoolError::Browser(_) => ApiError::BrowserDead,
+    let material = pool.sign(&web_rid).await.map_err(|e| {
+        if e.is_timeout() {
+            return ApiError::WssTimeout;
+        }
+        if e.is_no_wss_captured() {
+            return ApiError::NoWssCaptured;
+        }
+        match e {
+            PoolError::Busy => ApiError::PoolBusy,
+            PoolError::Sign(msg) => ApiError::SignFailed(msg),
+            PoolError::Browser(_) => ApiError::BrowserDead,
+        }
     })?;
 
     Ok(Json(SignResponse::from(material)))
