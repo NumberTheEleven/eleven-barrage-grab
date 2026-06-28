@@ -2,6 +2,7 @@
 //!
 //! Also includes the room metadata API client (`RoomInfoApi`).
 
+pub mod health;
 pub mod sign;
 
 use std::collections::HashMap;
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use axum::{routing::post, Router};
+use axum::{routing::{get, post}, Router};
 use serde::{Deserialize, Serialize};
 
 use eleven_barrage_collector::pool::BrowserPool;
@@ -264,6 +265,7 @@ fn map_reqwest_error(e: reqwest::Error) -> SignatureError {
 pub fn router(pool: Arc<BrowserPool>) -> Router {
     Router::new()
         .route("/v1/sign", post(sign::sign))
+        .route("/v1/health", get(health::health))
         .with_state(pool)
 }
 
