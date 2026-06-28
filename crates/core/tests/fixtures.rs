@@ -126,6 +126,7 @@ pub fn invalid_wire_type_bytes() -> Vec<u8> {
 }
 
 /// 构造 N 条 chat 消息（用于性能测试）
+#[allow(dead_code)]
 pub fn many_chat_msgs(count: usize) -> Vec<Message> {
     (0..count)
         .map(|i| chat_msg(&format!("msg-{}", i), i as i64))

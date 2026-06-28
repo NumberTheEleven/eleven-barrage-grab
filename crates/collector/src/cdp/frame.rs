@@ -3,7 +3,7 @@
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::cdp::commands::{CdpEvent, CdpResponse};
-use crate::cdp::error::{CdpError, Result};
+use crate::cdp::error::Result;
 
 #[derive(Debug)]
 pub enum ParsedCdpMessage {
@@ -15,6 +15,7 @@ pub enum ParsedCdpMessage {
 /// Parse a WebSocket message into a typed CDP message.
 /// Returns `CdpError::Json` if the payload is not valid JSON,
 /// or if it doesn't match either Response or Event shape.
+#[allow(clippy::result_large_err)]
 pub fn parse_message(msg: Message) -> Result<ParsedCdpMessage> {
     let bytes = match msg {
         Message::Text(t) => t.into_bytes(),
@@ -40,6 +41,7 @@ pub fn parse_message(msg: Message) -> Result<ParsedCdpMessage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cdp::error::CdpError;
     use tokio_tungstenite::tungstenite::Message;
 
     #[test]

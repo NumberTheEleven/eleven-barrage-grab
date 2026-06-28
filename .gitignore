@@ -31,3 +31,6 @@ config.local.toml
 # Test fixtures (large binary recordings)
 tests/fixtures/*.bin
 tests/fixtures/*.pcap
+
+# Superpowers SDD scratch (task briefs/reports, ledger)
+.superpowers/

@@ -7,7 +7,6 @@ mod fixtures;
 use eleven_barrage_core::{
     BarrageEvent, Dispatcher, EventFilter, MsgDedup, SessionFaultDetector, WssDecoder,
 };
-use eleven_barrage_proto::Common;
 
 #[test]
 fn full_pipeline_with_chat_message() {
@@ -228,11 +227,13 @@ fn msg_id_extraction() {
     use eleven_barrage_core::ChatMessage;
     use eleven_barrage_proto::Common;
 
-    let mut chat = ChatMessage::default();
-    chat.common = Some(Common {
-        msg_id: 12345,
+    let chat = ChatMessage {
+        common: Some(Common {
+            msg_id: 12345,
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
 
     let event = BarrageEvent::ChatMessage(chat);
     assert_eq!(event.msg_id(), 12345);
@@ -243,11 +244,13 @@ fn timestamp_extraction() {
     use eleven_barrage_core::ChatMessage;
     use eleven_barrage_proto::Common;
 
-    let mut chat = ChatMessage::default();
-    chat.common = Some(Common {
-        create_time: 1719475200000,
+    let chat = ChatMessage {
+        common: Some(Common {
+            create_time: 1719475200000,
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
 
     let event = BarrageEvent::ChatMessage(chat);
     assert_eq!(event.timestamp_ms(), 1719475200000);

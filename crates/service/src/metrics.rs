@@ -10,7 +10,7 @@
 
 use anyhow::{Context, Result};
 use metrics::{counter, gauge, histogram};
-use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
+use metrics_exporter_prometheus::PrometheusBuilder;
 
 use crate::config::ServiceConfig;
 

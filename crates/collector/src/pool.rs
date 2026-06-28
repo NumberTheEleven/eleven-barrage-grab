@@ -170,7 +170,7 @@ impl BrowserPool {
             .await
             .map_err(|e| PoolError::Sign(e.to_string()))?;
 
-        let mut events = handle.inner.cdp.subscribe_session(&tab.session_id);
+        let events = handle.inner.cdp.subscribe_session(&tab.session_id);
 
         let result = extract_wss(
             &handle.inner.cdp,
@@ -328,7 +328,6 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
-    use std::time::Duration;
     use tokio::sync::TryAcquireError;
 
     #[test]

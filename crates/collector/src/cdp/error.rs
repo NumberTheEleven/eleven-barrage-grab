@@ -29,8 +29,8 @@ mod tests {
 
     #[test]
     fn timeout_error_displays() {
-        let r: Result<()> = Err(CdpError::Timeout(Duration::from_secs(5)));
-        assert_eq!(r.unwrap_err().to_string(), "CDP command timed out after 5s");
+        let e = CdpError::Timeout(Duration::from_secs(5));
+        assert_eq!(e.to_string(), "CDP command timed out after 5s");
     }
 
     #[test]

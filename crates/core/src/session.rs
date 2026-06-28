@@ -27,6 +27,7 @@ pub struct SessionFaultDetector {
 struct Inner {
     consecutive_errors: AtomicU32,
     fault_notify: Notify,
+    #[allow(clippy::type_complexity)]
     fault_callback: Mutex<Option<Arc<dyn Fn(SessionFaultReason) + Send + Sync>>>,
 }
 

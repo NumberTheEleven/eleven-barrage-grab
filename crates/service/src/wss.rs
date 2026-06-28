@@ -171,7 +171,7 @@ impl WssConnectionManager {
         );
         record::wss_state(room_id, WssState::Connected);
 
-        let (mut write, mut read) = ws_stream.split();
+        let (write, mut read) = ws_stream.split();
 
         // SplitSink 不实现 Clone，需要 Arc<Mutex<>> 包装以在心跳任务与主循环间共享
         let shared_write = Arc::new(tokio::sync::Mutex::new(write));

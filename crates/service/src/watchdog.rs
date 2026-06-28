@@ -111,7 +111,8 @@ impl Watchdog {
 
     /// 停止 Watchdog
     pub async fn stop(&self) {
-        if let Some(handle) = self.handle.lock().take() {
+        let handle = self.handle.lock().take();
+        if let Some(handle) = handle {
             handle.abort();
             // 等待 task 终止（如果尚未终止）
             let _ = tokio::time::timeout(Duration::from_secs(1), handle).await;

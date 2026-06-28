@@ -37,6 +37,7 @@ use eleven_barrage_proto as proto;
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data")]
+#[allow(clippy::large_enum_variant)]
 pub enum BarrageEvent {
     /// 弹幕消息（MVP 推送）
     ChatMessage(ChatMessage),

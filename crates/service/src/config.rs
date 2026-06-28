@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use eleven_barrage_collector::SignatureError;
 
 /// 顶层配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     #[serde(default)]
     pub service: ServiceConfig,
@@ -384,23 +384,6 @@ impl Default for SignerConfig {
         Self { mode: "browser".into() }
     }
 }
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            service: ServiceConfig::default(),
-            wss: WssConfig::default(),
-            events: EventsConfig::default(),
-            room_api: RoomApiConfig::default(),
-            auth: AuthConfig::default(),
-            mitm: MitmConfig::default(),
-            logging: LoggingConfig::default(),
-            browser: BrowserConfig::default(),
-            rest: RestConfig::default(),
-            signer: SignerConfig::default(),
-        }
-    }
-}
-
 impl AppConfig {
     /// 从 TOML 文件加载配置
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
