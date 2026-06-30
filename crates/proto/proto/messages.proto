@@ -106,14 +106,26 @@ message ControlMessage {
 
 message RoomUserSeqMessage {
   Common common = 1;
-  int64 total = 2;
-  string pop_str = 3;
-  int64 popularity = 4;
-  int64 total_user = 5;
-  string total_user_str = 6;
-  string total_str = 7;
-  string online_user_for_anchor = 8;
-  string total_pv_for_anchor = 9;
+  repeated Contributor ranks = 2;
+  int64 total = 3;
+  string pop_str = 4;
+  repeated Contributor seats = 5;
+  int64 popularity = 6;
+  int64 total_user = 7;
+  string total_user_str = 8;
+  string total_str = 9;
+  string online_user_for_anchor = 10;
+  string total_pv_for_anchor = 11;
+
+  message Contributor {
+    int64 score = 1;
+    User user = 2;
+    int64 rank = 3;
+    int64 delta = 4;
+    bool is_hidden = 5;
+    string score_description = 6;
+    string exactly_score = 7;
+  }
 }
 
 message FansclubMessage {
@@ -134,14 +146,17 @@ message Common {
   int32 monitor = 5;
   bool is_show_msg = 6;
   string describe = 7;
-  int64 fold_type = 8;
-  int64 anchor_fold_type = 9;
-  int64 priority_score = 10;
-  string log_id = 11;
-  string msg_process_filter_k = 12;
-  string msg_process_filter_v = 13;
-  int64 anchor_fold_type_v2 = 14;
-  int64 app_id = 15;
+  Text display_text = 8;
+  int64 fold_type = 9;
+  int64 anchor_fold_type = 10;
+  int64 priority_score = 11;
+  string log_id = 12;
+  string msg_process_filter_k = 13;
+  string msg_process_filter_v = 14;
+  User user = 15;
+  Room room = 16;
+  int64 anchor_fold_type_v2 = 17;
+  int64 app_id = 24;
 }
 
 message User {
@@ -209,6 +224,95 @@ message GiftTrayInfo {
 }
 
 message PublicAreaCommon {
-  int64 user_consume_in_room = 1;
-  int64 user_send_gift_cnt_in_room = 2;
+  Image user_label = 1;
+  int64 user_consume_in_room = 2;
+  int64 user_send_gift_cnt_in_room = 3;
 }
+
+message Text {
+  string key = 1;
+  string default_pattern = 2;
+  TextFormat default_format = 3;
+  repeated TextPiece pieces = 4;
+}
+
+message TextFormat {
+  string color = 1;
+  bool bold = 2;
+  bool italic = 3;
+  int32 weight = 4;
+  int32 italic_angle = 5;
+  int32 font_size = 6;
+  bool user_height_light_color = 7;
+  bool use_remote_color = 8;
+}
+
+message TextPiece {
+  int32 type = 1;
+  TextFormat format = 2;
+  string string_value = 11;
+  TextPieceUser user_value = 21;
+}
+
+message TextPieceUser {
+  User user = 1;
+  bool with_colon = 2;
+}
+
+message Room {
+  int64 id = 1;
+  string id_str = 2;
+  int64 status = 3;
+  int64 owner_user_id = 4;
+  string title = 5;
+  int64 user_count = 6;
+  int64 create_time = 7;
+  int64 linkmic_layout = 8;
+  int64 finish_time = 9;
+  RoomExtra extra = 10;
+  string dynamic_cover_uri = 11;
+  map<int64, string> dynamic_cover_dict = 12;
+  int64 last_ping_time = 13;
+  int64 live_id = 14;
+  int64 stream_provider = 15;
+  int64 os_type = 16;
+  int64 client_version = 17;
+  bool with_linkmic = 18;
+  bool enable_room_perspective = 19;
+  Image cover = 20;
+  Image dynamic_cover = 21;
+  Image dynamic_cover_low = 22;
+  string share_url = 23;
+  string anchor_share_text = 24;
+  string user_share_text = 25;
+  int64 stream_id = 26;
+  string stream_id_str = 27;
+  StreamUrl stream_url = 28;
+  int64 mosaic_status = 29;
+  string mosaic_tip = 30;
+  int64 cell_style = 31;
+  LinkMic link_mic = 32;
+  int64 luckymoney_num = 33;
+  repeated Decoration deco_list = 34;
+  repeated TopFan top_fans = 35;
+  RoomStats stats = 36;
+  string sun_daily_icon_content = 37;
+  string distance = 38;
+  string distance_city = 39;
+  string location = 40;
+  string real_distance = 41;
+  Image feed_room_label = 42;
+  string common_label_list = 43;
+  RoomUserAttr living_room_attrs = 44;
+  repeated int64 admin_user_ids = 45;
+  User owner = 46;
+  string private_info = 47;
+}
+
+message RoomExtra {}
+message RoomStats {}
+message RoomUserAttr {}
+message StreamUrl {}
+message LinkMic {}
+message Decoration {}
+message TopFan {}

@@ -270,6 +270,7 @@ pub struct Request {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct AttachedToTargetParams {
     #[serde(default)]
     pub session_id: Option<String>,
@@ -277,6 +278,7 @@ pub struct AttachedToTargetParams {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct TargetInfo {
     pub target_id: String,
     #[serde(rename = "type")]
@@ -285,6 +287,7 @@ pub struct TargetInfo {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DetachedFromTargetParams {
     pub session_id: String,
     pub target_id: String,

@@ -12,7 +12,7 @@ use std::time::Duration;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use futures::{SinkExt, StreamExt};
-use tracing::{error, info};
+use tracing::info;
 
 #[derive(Parser)]
 #[command(name = "ebg", about = "eleven-barrage-grab CLI")]
@@ -70,41 +70,51 @@ async fn main() -> ExitCode {
 
     match cli.command {
         None | Some(EbgCommand::Start) => {
+            // service::run() 内部会初始化 tracing subscriber，
+            // 这里不能再调用 tracing_subscriber::fmt::init()。
             if let Err(e) = eleven_barrage_service::run().await {
-                error!(error = %e, "service run failed");
+                eprintln!("Error: {}", e);
                 return ExitCode::FAILURE;
             }
             ExitCode::SUCCESS
         }
-        Some(EbgCommand::Sign { url, rest_addr }) => match run_sign(&url, &rest_addr).await {
-            Ok(_) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                ExitCode::FAILURE
+        Some(EbgCommand::Sign { url, rest_addr }) => {
+            tracing_subscriber::fmt::init();
+            match run_sign(&url, &rest_addr).await {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    ExitCode::FAILURE
+                }
             }
-        },
+        }
         Some(EbgCommand::Grab {
             url,
             config,
             cookie_file,
             grpc_addr,
             verbose,
-        }) => match run_grab(&url,
-            config.as_ref(),
-            cookie_file.as_ref(),
-            &grpc_addr,
-            verbose,
-        )
-        .await {
-            Ok(_) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("Error: signature error");
-                eprintln!("  code: {}", e.code());
-                eprintln!("  retryable: {}", e.retryable());
-                eprintln!("  message: {}", e);
-                ExitCode::FAILURE
+        }) => {
+            tracing_subscriber::fmt::init();
+            match run_grab(
+                &url,
+                config.as_ref(),
+                cookie_file.as_ref(),
+                &grpc_addr,
+                verbose,
+            )
+            .await
+            {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("Error: signature error");
+                    eprintln!("  code: {}", e.code());
+                    eprintln!("  retryable: {}", e.retryable());
+                    eprintln!("  message: {}", e);
+                    ExitCode::FAILURE
+                }
             }
-        },
+        }
     }
 }
 
