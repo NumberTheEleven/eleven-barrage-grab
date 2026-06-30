@@ -1,6 +1,6 @@
 {
   "feature": "url-fetch-consumer",
-  "phase": "verify",
+  "phase": "completed",
   "created_at": "2026-06-30T12:13:39+08:00",
   "version": "3.0",
   "requirements_confirmed": true,
