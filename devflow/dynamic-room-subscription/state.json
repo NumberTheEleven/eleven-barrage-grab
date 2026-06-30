@@ -1,0 +1,23 @@
+{
+  "requirements_confirmed": true,
+  "feature": "dynamic-room-subscription",
+  "created_at": "2026-06-30T23:01:51+08:00",
+  "phase": "blueprint",
+  "open_questions": [],
+  "checkpoints": {
+    "blueprint": "in_progress",
+    "verify": "pending",
+    "clarify": "done",
+    "implement": "pending",
+    "breakdown": "done"
+  },
+  "rollback_history": [],
+  "isolation": {
+    "target_branch": "main",
+    "type": "worktree",
+    "path": ".claude/worktrees/devflow-dynamic-room-subscription",
+    "created_at": "2026-06-30T23:01:51+08:00",
+    "branch": "dynamic-room-subscription"
+  },
+  "version": "3.0"
+}
