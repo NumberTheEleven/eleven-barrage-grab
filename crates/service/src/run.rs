@@ -4,15 +4,12 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use eleven_barrage_core::EventFilter;
 use tokio::signal;
-use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::{
-    api::RoomInfoApi, config::AppConfig, grpc_server, logging, metrics::MetricsExporter,
-    rest_server, room::SingleRoomManager, watchdog::Watchdog,
-    ws_server::WsServer, wss::WssConnectionManager,
+    config::AppConfig, dynamic_room::DynamicRoomManager, grpc_server, logging,
+    metrics::MetricsExporter, rest_server, watchdog::Watchdog, ws_server::WsServer,
 };
 
 #[derive(Parser, Debug)]
@@ -28,18 +25,6 @@ pub struct Cli {
     /// 配置文件路径（默认 config.toml）
     #[arg(short, long, global = true)]
     pub config: Option<String>,
-
-    /// 抖音直播间 web_room_id
-    #[arg(long)]
-    pub room_id: Option<String>,
-
-    /// WSS URL（覆盖配置）
-    #[arg(long)]
-    pub wss_url: Option<String>,
-
-    /// 抖音登录态 Cookie（覆盖配置）
-    #[arg(long)]
-    pub cookie: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -67,20 +52,6 @@ pub async fn run() -> Result<()> {
     // 2. 应用环境变量覆盖
     config.apply_env_overrides();
 
-    // 3. 应用 CLI flags 覆盖（最高优先级）
-    if let Some(room_id) = &cli.room_id {
-        info!(new = %room_id, "override room_id from CLI");
-        config.service.room_id = room_id.clone();
-    }
-    if let Some(wss_url) = &cli.wss_url {
-        info!(new = %wss_url, "override wss_url from CLI");
-        config.wss.url = wss_url.clone();
-    }
-    if let Some(cookie) = &cli.cookie {
-        info!("override cookie from CLI");
-        config.room_api.cookie = cookie.clone();
-    }
-
     // 处理子命令
     match cli.command.as_ref().unwrap_or(&Command::Start) {
         Command::ShowConfig => {
@@ -97,25 +68,24 @@ pub async fn run() -> Result<()> {
         }
     }
 
-    // 4. 校验配置
+    // 3. 校验配置
     config
         .validate()
         .context("configuration validation failed")?;
 
-    // 5. 初始化日志
+    // 4. 初始化日志
     logging::init(&config.logging)?;
 
     info!(
         version = env!("CARGO_PKG_VERSION"),
-        room_id = %config.service.room_id,
-        "starting eleven-barrage-grab"
+        "starting eleven-barrage-grab (dynamic room subscription mode)"
     );
 
-    // 6. 安装 metrics
-    let _metrics_exporter =
-        MetricsExporter::install(&config.service).context("failed to install metrics exporter")?;
+    // 5. 安装 metrics
+    let _metrics_exporter = MetricsExporter::install(&config.service)
+        .context("failed to install metrics exporter")?;
 
-    // 6b. 构建 auth cookies map 并启动 BrowserPool (auto-signer)
+    // 6. 构建 auth cookies map
     let mut auth_cookies = std::collections::HashMap::new();
     if !config.auth.ttwid.is_empty() {
         auth_cookies.insert("ttwid".to_string(), config.auth.ttwid.clone());
@@ -124,6 +94,7 @@ pub async fn run() -> Result<()> {
         auth_cookies.insert("sessionid".to_string(), config.auth.sessionid.clone());
     }
 
+    // 7. 启动 BrowserPool
     let browser_config = eleven_barrage_collector::pool::BrowserPoolConfig {
         pool_size: config.browser.pool_size,
         max_concurrent_per_browser: config.browser.max_concurrent_per_browser,
@@ -135,63 +106,41 @@ pub async fn run() -> Result<()> {
         user_data_dir_template: config.browser.user_data_dir_template.clone(),
         extra_args: config.browser.extra_args.clone(),
         cdp_port_base: config.browser.cdp_port_base,
-        auth_cookies,
+        auth_cookies: auth_cookies.clone(),
     };
-    let browser_pool =
-        eleven_barrage_collector::pool::BrowserPool::start(browser_config)
-            .await
-            .context("failed to start browser pool")?;
+    let browser_pool = eleven_barrage_collector::pool::BrowserPool::start(browser_config)
+        .await
+        .context("failed to start browser pool")?;
 
-    // 6c. 启动 REST server task
+    // 8. 创建动态房间管理器
+    let rooms = Arc::new(DynamicRoomManager::new());
+
+    // 9. 启动 REST server
     let rest_addr = config.rest.listen_addr;
     let rest_pool = browser_pool.clone();
+    let rest_rooms = rooms.clone();
+    let rest_browser = config.browser.clone();
+    let rest_cookies = auth_cookies.clone();
     let _rest_handle = tokio::spawn(async move {
-        if let Err(e) = rest_server::run_rest_server(rest_addr, rest_pool).await {
+        if let Err(e) = rest_server::run_rest_server(
+            rest_addr,
+            rest_pool,
+            rest_rooms,
+            rest_browser,
+            rest_cookies,
+        )
+        .await
+        {
             tracing::error!(error = %e, "REST server exited");
         }
     });
 
-    // 7. 启动 Watchdog
+    // 10. 启动 Watchdog
     let watchdog = Watchdog::default();
     watchdog.start();
 
-    // 8. 调用房间元数据 API（可选）
-    let room_info = if config.room_api.enabled {
-        let api = RoomInfoApi::new(config.room_api.clone())
-            .context("failed to create room info API client")?;
-        match api.get(&config.service.room_id).await {
-            Ok(info) => {
-                info!(
-                    room_id = %info.room_id,
-                    title = ?info.title,
-                    owner = ?info.owner_nickname,
-                    is_live = info.is_live,
-                    "room info fetched"
-                );
-                Some(info)
-            }
-            Err(e) => {
-                warn!(error = %e, "failed to fetch room info, continuing without it");
-                None
-            }
-        }
-    } else {
-        info!("room info API disabled by config");
-        None
-    };
-
-    // 9. 创建 EventFilter（基于配置的 push_event_methods）
-    let filter = EventFilter::new(config.push_event_methods().to_vec());
-
-    // 10. 创建 WssConnectionManager + SingleRoomManager
-    let wss = WssConnectionManager::new(config.wss.clone(), filter);
-    let mut room_manager = SingleRoomManager::new(config.service.room_id.clone(), wss.clone());
-
-    // 11. 创建 WS 下游服务端
-    let ws_server = Arc::new(WsServer::new(config.service.ws_listen_addr));
-    let ws_dispatcher = ws_server.dispatcher();
-
-    // 12. 启动 WS 服务端 task
+    // 11. 启动 WS 下游服务端
+    let ws_server = Arc::new(WsServer::new(config.service.ws_listen_addr, rooms.clone()));
     let ws_server_handle = {
         let ws_server = ws_server.clone();
         tokio::spawn(async move {
@@ -201,44 +150,28 @@ pub async fn run() -> Result<()> {
         })
     };
 
-    // 13. 启动 gRPC 服务端 task（带上游事件源 + BrowserPool）
+    // 12. 启动 gRPC 服务端
     let grpc_addr = config.service.grpc_listen_addr;
-    let (grpc_event_tx, grpc_event_rx) = mpsc::channel::<eleven_barrage_core::BarrageEvent>(1024);
-    drop(grpc_event_tx);
+    let (_grpc_tx, grpc_rx) =
+        tokio::sync::mpsc::channel::<eleven_barrage_core::BarrageEvent>(1024);
+    drop(_grpc_tx);
     let grpc_pool = browser_pool.clone();
     let grpc_handle = tokio::spawn(async move {
-        if let Err(e) = grpc_server::run_grpc_server_with_pool(grpc_addr, grpc_event_rx, grpc_pool)
-            .await
+        if let Err(e) =
+            grpc_server::run_grpc_server_with_pool(grpc_addr, grpc_rx, grpc_pool).await
         {
             error!(error = %e, "gRPC server exited with error");
         }
     });
 
-    // 14. 启动房间事件 pump（room manager → ws dispatcher）
-    // event_rx 已 moved into gRPC server, 所以需要从 room_manager 重新取
-    let event_rx2 = room_manager
-        .take_event_receiver()
-        .ok_or_else(|| anyhow::anyhow!("event receiver already taken"))?;
-
-    let _event_pump = tokio::spawn(async move {
-        let mut rx = event_rx2;
-        while let Some(event) = rx.recv().await {
-            ws_dispatcher.dispatch(event).await;
-        }
-    });
-
-    // 15. 启动房间拉流
-    room_manager
-        .start_in_task(room_info)
-        .await
-        .context("failed to start room manager")?;
-
-    // 16. 主循环：等待 shutdown 信号
-    info!("service started, waiting for shutdown signal");
+    // 13. 主循环
+    info!(
+        "service started, waiting for shutdown signal (POST /v1/rooms to create rooms)"
+    );
     let shutdown_reason = wait_for_shutdown().await;
     info!(reason = ?shutdown_reason, "shutdown signal received");
 
-    // 17. 优雅关闭
+    // 14. 优雅关闭
     info!("shutting down...");
     watchdog.stop().await;
     ws_server_handle.abort();
@@ -259,7 +192,7 @@ async fn wait_for_shutdown() -> ShutdownReason {
     #[cfg(unix)]
     let terminate = async {
         signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
+            .expect("failed to install SIGTERM signal")
             .recv()
             .await;
     };
