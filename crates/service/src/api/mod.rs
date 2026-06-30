@@ -3,6 +3,7 @@
 //! Also includes the room metadata API client (`RoomInfoApi`).
 
 pub mod health;
+pub mod rooms;
 pub mod sign;
 
 use std::collections::HashMap;
@@ -10,13 +11,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use axum::{routing::{get, post}, Router};
+use axum::{routing::{delete, get, post}, Router};
 use serde::{Deserialize, Serialize};
 
 use eleven_barrage_collector::pool::BrowserPool;
 use eleven_barrage_collector::SignatureError;
 
-use crate::config::RoomApiConfig;
+use crate::config::{BrowserConfig, RoomApiConfig};
+use crate::dynamic_room::DynamicRoomManager;
 
 // ── Room metadata API ──────────────────────────────────────────
 
@@ -262,11 +264,36 @@ fn map_reqwest_error(e: reqwest::Error) -> SignatureError {
 
 // ── REST API router ────────────────────────────────────────────
 
-pub fn router(pool: Arc<BrowserPool>) -> Router {
-    Router::new()
+/// 应用全部 REST 路由（含 /v1/sign, /v1/health, /v1/rooms）
+///
+/// - `pool`：浏览器池（用于 /v1/sign 和 /v1/rooms POST）
+/// - `rooms`：动态房间管理器
+/// - `browser`：浏览器配置（用于 fetch path）
+/// - `auth_cookies`：全局认证 cookie
+pub fn router(
+    pool: Arc<BrowserPool>,
+    rooms: Arc<DynamicRoomManager>,
+    browser: BrowserConfig,
+    auth_cookies: HashMap<String, String>,
+) -> Router {
+    let pool_only = Router::new()
         .route("/v1/sign", post(sign::sign))
         .route("/v1/health", get(health::health))
-        .with_state(pool)
+        .with_state(pool.clone());
+
+    let rooms_state = rooms::RoomsState {
+        pool,
+        rooms,
+        browser,
+        auth_cookies,
+    };
+
+    let rooms_routes = Router::new()
+        .route("/v1/rooms", post(rooms::create_room).get(rooms::list_rooms))
+        .route("/v1/rooms/:room_id", delete(rooms::destroy_room))
+        .with_state(rooms_state);
+
+    pool_only.merge(rooms_routes)
 }
 
 // ── Tests ──────────────────────────────────────────────────────
