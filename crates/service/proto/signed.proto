@@ -37,6 +37,11 @@ message ProvideSignedWssResponse {
   }
 }
 
+enum MaterialKind {
+  WSS = 0;
+  HTTP_FETCH = 1;
+}
+
 message SignedWssMaterial {
   // 签名后的 wss URL
   string url = 1;
@@ -44,6 +49,8 @@ message SignedWssMaterial {
   map<string, string> headers = 2;
   // 过期时间（Unix epoch 秒）
   int64 expires_at_unix = 3;
+  // 端点类型
+  MaterialKind kind = 4;
 }
 
 message SignatureErrorInfo {

@@ -80,6 +80,24 @@ impl WssDecoder {
         Ok((wss_response, response))
     }
 
+    /// 解码一个 HTTP fetch 响应体（裸 `Response` protobuf，可能经过 gzip）。
+    ///
+    /// 与 `decode` 不同，fetch body 没有外层 `WssResponse` 包装。
+    pub fn decode_fetch_body(&self, body: &[u8]) -> CoreResult<Response> {
+        if body.is_empty() {
+            return Err(CoreError::InvalidWssHeader("empty fetch body".to_string()));
+        }
+
+        const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
+        let payload = if body.starts_with(&GZIP_MAGIC) {
+            self.decompress_gzip(body)?
+        } else {
+            body.to_vec()
+        };
+
+        Ok(Response::decode(payload.as_slice())?)
+    }
+
     /// gzip 解压
     fn decompress_gzip(&self, data: &[u8]) -> CoreResult<Vec<u8>> {
         let mut decoder = GzDecoder::new(data);
@@ -111,6 +129,37 @@ mod tests {
         // 首字节 0x07 → wire_type = 7（保留值）
         let result = decoder.decode(&[0x07, 0x00], false);
         assert!(matches!(result, Err(CoreError::InvalidWireType(7))));
+    }
+
+    #[test]
+    fn decode_fetch_body_from_raw_response() {
+        let decoder = WssDecoder::new();
+        let chat = eleven_barrage_proto::ChatMessage {
+            content: "fetch".to_string(),
+            ..Default::default()
+        };
+        let msg = eleven_barrage_proto::Message {
+            method: crate::message_method::CHAT.to_string(),
+            payload: chat.encode_to_vec(),
+            msg_id: 42,
+            ..Default::default()
+        };
+        let response = eleven_barrage_proto::Response {
+            messages: vec![msg],
+            ..Default::default()
+        };
+        let body = response.encode_to_vec();
+
+        let decoded = decoder.decode_fetch_body(&body).unwrap();
+        assert_eq!(decoded.messages.len(), 1);
+        assert_eq!(decoded.messages[0].msg_id, 42);
+    }
+
+    #[test]
+    fn decode_fetch_body_empty_returns_error() {
+        let decoder = WssDecoder::new();
+        let result = decoder.decode_fetch_body(&[]);
+        assert!(matches!(result, Err(CoreError::InvalidWssHeader(_))));
     }
 
     #[test]

@@ -1,42 +1,23 @@
-# eleven-barrage-grab 配置示例
+# eleven-barrage-grab 配置模板
 #
-# 复制此文件为 config.toml 并根据实际情况修改
+# 复制此文件为 config.toml 或 config.local.toml 后填入真实值
+# 不要把含有真实 ttwid/sessionid 的文件提交到 git。
+#
 # 优先级：CLI flags > 环境变量 > 配置文件
 
 [service]
 # 抖音直播间 web_room_id（如 "741891423654"）
 room_id = "741891423654"
 
-# WS 服务端监听地址（下游消费者接入）
+# WS / gRPC / metrics 监听地址
 ws_listen_addr = "0.0.0.0:8888"
-
-# gRPC 服务端监听地址
 grpc_listen_addr = "0.0.0.0:50051"
-
-# Prometheus metrics 端点
 metrics_listen_addr = "0.0.0.0:9090"
 
 [wss]
-# 上游 wss URL（空 → 必须由 collector 提供，参考 R-011/R-012）
+# 空字符串表示走 auto-sign（由浏览器/CDP 自动签名）
 url = ""
-
-# 必需的 HTTP headers（如 Cookie、签名等）
-# 如果空，service 启动时会等待 collector 提供 SignedWssMaterial
-# MVP 阶段可以通过 --wss-url + --cookie CLI flag 临时注入
-[room_api]
-# 抖音登录态 Cookie（可选，用于访问私密房间）
-cookie = ""
-
-# 是否在启动时调用 room info API（用于获取 room_id_str）
-enabled = true
-
-# Auto-sign mode cookie (auto-sign-fetcher R-002)
-# 从浏览器 DevTools → Application → Cookies 复制：
-#   - ttwid: 必填，至少填一个
-#   - sessionid: 可选
-[auth]
-ttwid = "your_ttwid_here"
-sessionid = ""  # optional
+heartbeat_interval_secs = 5
 
 [events]
 # 允许推送的事件 method（MVP 默认仅 Chat/Gift/Like）
@@ -46,55 +27,38 @@ push_event_methods = [
     "WebcastLikeMessage",
 ]
 
-[mitm]
-# 启用 MITM 兜底模式（参考原项目 TitaniumProxy）
-# MVP 阶段仅占位接口，未实现
-fallback_enabled = false
-proxy_port = 8827
+[room_api]
+# 抖音登录态 Cookie（可选）
+cookie = ""
+# 是否在启动时调用 room info API
+enabled = false
+
+# 关键：从浏览器 DevTools 复制登录态 cookie 填入
+# Linux 无 GUI 环境：由外部注入，不继承已登录浏览器 profile
+[auth]
+ttwid = ""
+sessionid = ""
 
 [logging]
-# 日志级别：trace / debug / info / warn / error
 level = "info"
-
-# 是否使用 JSON 格式（生产推荐）
 json_format = false
 
-# Browser-based signer config (auto-signer)
 [browser]
-# Edge path (Windows default; Linux/Mac auto-detect in v2)
-edge_path = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+# Windows 默认路径示例：
+# edge_path = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+# Linux 无 GUI 环境示例（需先安装 headless Chromium/Edge）：
+edge_path = "/usr/bin/chromium"
 
-# Pool size: number of Edge processes
 pool_size = 3
-
-# Concurrent sign requests per browser
 max_concurrent_per_browser = 2
-
-# Timeout for capturing WSS request after navigation
-sign_timeout_secs = 10
-
-# Health check interval (browser alive check)
+sign_timeout_secs = 15
 health_check_interval_secs = 30
-
-# User data directory template ({id} substituted with browser index)
 user_data_dir_template = "./data/browser-{id}"
-
-# Extra Edge args (anti-detection)
-extra_args = [
-    "--headless=new",
-    "--disable-blink-features=AutomationControlled",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--window-size=1920,1080",
-]
-
-# CDP port base (each browser gets port_base + id)
+extra_args = []
 cdp_port_base = 9222
 
-# REST API config
 [rest]
 listen_addr = "0.0.0.0:7878"
 
-# Signer mode (reserved; only "browser" is currently supported)
 [signer]
 mode = "browser"

@@ -14,6 +14,7 @@
 
 pub mod api;
 pub mod config;
+pub mod fetch;
 pub mod grpc_server;
 pub mod grpc_signed;
 pub mod logging;
@@ -28,6 +29,7 @@ pub mod wss;
 
 pub use api::{RoomInfo, RoomInfoApi};
 pub use config::{AppConfig, AuthConfig, RoomApiConfig};
+pub use fetch::FetchConnectionManager;
 pub use grpc_signed::{signed_proto, SignedBarrageServiceImpl, SignedBarrageServiceServer};
 pub use logging::init as init_logging;
 pub use metrics::{MetricsExporter, WssState};

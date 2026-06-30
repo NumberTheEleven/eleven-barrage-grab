@@ -486,6 +486,7 @@ dependencies = [
  "tokio-tungstenite",
  "tonic",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -494,7 +495,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
+ "eleven-barrage-core",
+ "eleven-barrage-proto",
  "futures-util",
+ "prost",
  "reqwest",
  "serde",
  "serde_json",

@@ -1,6 +1,6 @@
 //! URL 解析器（R-001）
 //!
-//! 从用户输入 URL 提取 `web_rid`，仅支持 `live.douyin.com` 长链。
+//! 从用户输入 URL 提取 `web_rid`，支持以下抖音直播间长链：
 //!
 //! # 支持的格式
 //!
@@ -8,6 +8,8 @@
 //! - `live.douyin.com/664637748606`（无 scheme，自动补 `https://`）
 //! - `live.douyin.com/xxx?foo=bar`（含 query，query 忽略）
 //! - `live.douyin.com/xxx#section`（含 fragment，fragment 忽略）
+//! - `https://www.douyin.com/root/live/49844349625`
+//! - `www.douyin.com/root/live/49844349625?anchor_id=...`
 //!
 //! # 拒绝的格式
 //!
@@ -21,7 +23,7 @@ use crate::error::SignatureError;
 pub type WebRid = String;
 
 /// 抖音直播间的 host（白名单）
-const ALLOWED_HOST: &str = "live.douyin.com";
+const ALLOWED_HOSTS: &[&str] = &["live.douyin.com", "www.douyin.com"];
 
 /// 从用户输入 URL 提取 web_rid
 ///
@@ -58,24 +60,41 @@ pub fn parse(input: &str) -> Result<WebRid, SignatureError> {
         .ok_or_else(|| SignatureError::UrlFormatNotSupported {
             url: input.to_string(),
         })?;
-    if host != ALLOWED_HOST {
+    if !ALLOWED_HOSTS.contains(&host) {
         return Err(SignatureError::UrlFormatNotSupported {
             url: input.to_string(),
         });
     }
 
-    // 4. 路径首段 = web_rid
+    // 4. 路径提取 web_rid
     let path = url.path();
-    let web_rid = path
-        .trim_start_matches('/')
+    let web_rid = if host == "www.douyin.com" {
+        extract_www_root_live_web_rid(path, input)?
+    } else {
+        extract_first_path_segment(path, input)?
+    };
+
+    Ok(web_rid.to_string())
+}
+
+fn extract_first_path_segment<'a>(path: &'a str, input: &str) -> Result<&'a str, SignatureError> {
+    path.trim_start_matches('/')
         .split('/')
         .next()
         .filter(|s| !s.is_empty())
         .ok_or_else(|| SignatureError::UrlFormatNotSupported {
             url: input.to_string(),
-        })?;
+        })
+}
 
-    Ok(web_rid.to_string())
+fn extract_www_root_live_web_rid<'a>(path: &'a str, input: &str) -> Result<&'a str, SignatureError> {
+    let mut segments = path.trim_start_matches('/').split('/');
+    match (segments.next(), segments.next(), segments.next()) {
+        (Some("root"), Some("live"), Some(web_rid)) if !web_rid.is_empty() => Ok(web_rid),
+        _ => Err(SignatureError::UrlFormatNotSupported {
+            url: input.to_string(),
+        }),
+    }
 }
 
 /// 确保 URL 有 scheme（无则补 `https://`）
@@ -168,8 +187,37 @@ mod tests {
     }
 
     #[test]
-    fn reject_www_douyin_com() {
+    fn parse_www_douyin_com_root_live() {
+        let result = parse("https://www.douyin.com/root/live/49844349625");
+        assert_eq!(result.unwrap(), "49844349625");
+    }
+
+    #[test]
+    fn parse_www_douyin_com_root_live_with_query() {
+        let result = parse(
+            "https://www.douyin.com/root/live/49844349625?anchor_id=66730156188&use_new_preview=true",
+        );
+        assert_eq!(result.unwrap(), "49844349625");
+    }
+
+    #[test]
+    fn parse_www_douyin_com_root_live_without_scheme() {
+        let result = parse("www.douyin.com/root/live/49844349625");
+        assert_eq!(result.unwrap(), "49844349625");
+    }
+
+    #[test]
+    fn reject_www_douyin_com_other_path() {
         let result = parse("https://www.douyin.com/xxx");
+        assert!(matches!(
+            result,
+            Err(SignatureError::UrlFormatNotSupported { .. })
+        ));
+    }
+
+    #[test]
+    fn reject_www_douyin_com_missing_id() {
+        let result = parse("https://www.douyin.com/root/live/");
         assert!(matches!(
             result,
             Err(SignatureError::UrlFormatNotSupported { .. })

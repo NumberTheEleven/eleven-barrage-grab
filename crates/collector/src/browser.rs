@@ -36,6 +36,7 @@ pub fn default_edge_args() -> Vec<String> {
         "--disable-backgrounding-occluded-windows".into(),
         "--disable-renderer-backgrounding".into(),
         "--window-size=1920,1080".into(),
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0".into(),
     ]
 }
 
