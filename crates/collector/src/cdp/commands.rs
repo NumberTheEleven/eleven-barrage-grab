@@ -14,10 +14,20 @@ pub enum CdpCommand {
         id: i64,
         params: SetDiscoverTargetsParams,
     },
+    #[serde(rename = "Target.setAutoAttach")]
+    SetAutoAttach {
+        id: i64,
+        params: SetAutoAttachParams,
+    },
     #[serde(rename = "Target.createTarget")]
     CreateTarget {
         id: i64,
         params: CreateTargetParams,
+    },
+    #[serde(rename = "Target.attachToTarget")]
+    AttachToTarget {
+        id: i64,
+        params: AttachToTargetParams,
     },
     #[serde(rename = "Target.closeTarget")]
     CloseTarget {
@@ -27,26 +37,56 @@ pub enum CdpCommand {
     #[serde(rename = "Page.enable")]
     PageEnable {
         id: i64,
-        params: PageEnableParams,
+        #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
     },
     #[serde(rename = "Page.navigate")]
     PageNavigate {
         id: i64,
-        params: NavigateParams,
+        #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        params: PageNavigateParams,
     },
     #[serde(rename = "Network.enable")]
     NetworkEnable {
         id: i64,
-        params: NetworkEnableParams,
+        #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+    },
+    #[serde(rename = "Network.setCookie")]
+    NetworkSetCookie {
+        id: i64,
+        #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        params: NetworkSetCookieParams,
+    },
+    #[serde(rename = "Network.getAllCookies")]
+    NetworkGetAllCookies { id: i64 },
+    #[serde(rename = "Network.getCookies")]
+    NetworkGetCookies {
+        id: i64,
+        #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        params: NetworkGetCookiesParams,
+    },
+    #[serde(rename = "Network.getResponseBody")]
+    NetworkGetResponseBody {
+        id: i64,
+        #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        params: NetworkGetResponseBodyParams,
     },
     #[serde(rename = "Network.disable")]
     NetworkDisable {
         id: i64,
-        params: NetworkDisableParams,
+        #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
     },
     #[serde(rename = "Runtime.evaluate")]
     RuntimeEvaluate {
         id: i64,
+        #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
         params: RuntimeEvaluateParams,
     },
     #[serde(rename = "Browser.getVersion")]
@@ -61,8 +101,31 @@ pub struct SetDiscoverTargetsParams {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SetAutoAttachParams {
+    pub auto_attach: bool,
+    pub wait_for_debugger_on_start: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flatten: Option<bool>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateTargetParams {
     pub url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachToTargetParams {
+    pub target_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flatten: Option<bool>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachToTargetResult {
+    pub session_id: String,
 }
 
 #[derive(Serialize)]
@@ -73,40 +136,51 @@ pub struct CloseTargetParams {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PageEnableParams {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NavigateParams {
+pub struct PageNavigateParams {
     pub url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub referrer: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NetworkEnableParams {
+pub struct NetworkSetCookieParams {
+    pub name: String,
+    pub value: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
+    pub domain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NetworkDisableParams {}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeEvaluateParams {
     pub expression: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub return_by_value: Option<bool>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkGetResponseBodyParams {
+    pub request_id: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkGetResponseBodyResult {
+    pub body: String,
+    #[serde(default)]
+    pub base64_encoded: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkGetCookiesParams {
+    pub urls: Vec<String>,
 }
 
 // ===== Response =====
@@ -132,6 +206,24 @@ pub struct CreateTargetResult {
     pub target_id: String,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct NetworkGetAllCookiesResult {
+    pub cookies: Vec<Cookie>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Cookie {
+    pub name: String,
+    pub value: String,
+    pub domain: String,
+    pub path: String,
+    #[serde(default)]
+    pub http_only: bool,
+    #[serde(default)]
+    pub secure: bool,
+}
+
 // ===== Events =====
 
 #[derive(Deserialize, Debug, Clone)]
@@ -139,6 +231,9 @@ pub struct CreateTargetResult {
 pub enum CdpEvent {
     #[serde(rename = "Network.requestWillBeSent")]
     RequestWillBeSent { params: RequestWillBeSentParams },
+
+    #[serde(rename = "Network.responseReceived")]
+    ResponseReceived { params: ResponseReceivedParams },
 
     #[serde(rename = "Target.attachedToTarget")]
     AttachedToTarget { params: AttachedToTargetParams },
@@ -161,6 +256,12 @@ pub struct RequestWillBeSentParams {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ResponseReceivedParams {
+    pub request_id: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct Request {
     pub url: String,
     pub method: String,
@@ -170,7 +271,8 @@ pub struct Request {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AttachedToTargetParams {
-    pub session_id: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
     pub target_info: TargetInfo,
 }
 
@@ -213,15 +315,15 @@ mod tests {
     fn serialize_page_navigate_with_session() {
         let cmd = CdpCommand::PageNavigate {
             id: 2,
-            params: NavigateParams {
+            session_id: Some("ABC123".into()),
+            params: PageNavigateParams {
                 url: "https://example.com".into(),
-                session_id: Some("ABC123".into()),
                 referrer: Some("https://ref.com".into()),
             },
         };
         let json = serde_json::to_value(&cmd).unwrap();
         assert_eq!(json["method"], "Page.navigate");
-        assert_eq!(json["params"]["sessionId"], "ABC123");
+        assert_eq!(json["sessionId"], "ABC123");
         assert_eq!(json["params"]["referrer"], "https://ref.com");
     }
 

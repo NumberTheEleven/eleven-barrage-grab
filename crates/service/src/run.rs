@@ -115,7 +115,15 @@ pub async fn run() -> Result<()> {
     let _metrics_exporter =
         MetricsExporter::install(&config.service).context("failed to install metrics exporter")?;
 
-    // 6b. 启动 BrowserPool (auto-signer)
+    // 6b. 构建 auth cookies map 并启动 BrowserPool (auto-signer)
+    let mut auth_cookies = std::collections::HashMap::new();
+    if !config.auth.ttwid.is_empty() {
+        auth_cookies.insert("ttwid".to_string(), config.auth.ttwid.clone());
+    }
+    if !config.auth.sessionid.is_empty() {
+        auth_cookies.insert("sessionid".to_string(), config.auth.sessionid.clone());
+    }
+
     let browser_config = eleven_barrage_collector::pool::BrowserPoolConfig {
         pool_size: config.browser.pool_size,
         max_concurrent_per_browser: config.browser.max_concurrent_per_browser,
@@ -127,12 +135,12 @@ pub async fn run() -> Result<()> {
         user_data_dir_template: config.browser.user_data_dir_template.clone(),
         extra_args: config.browser.extra_args.clone(),
         cdp_port_base: config.browser.cdp_port_base,
+        auth_cookies,
     };
-    let browser_pool = std::sync::Arc::new(
+    let browser_pool =
         eleven_barrage_collector::pool::BrowserPool::start(browser_config)
             .await
-            .context("failed to start browser pool")?,
-    );
+            .context("failed to start browser pool")?;
 
     // 6c. 启动 REST server task
     let rest_addr = config.rest.listen_addr;

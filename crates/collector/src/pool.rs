@@ -1,5 +1,6 @@
 //! Browser pool with round-robin scheduling (auto-signer spec section 2)
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -12,9 +13,9 @@ use tokio::sync::Semaphore;
 
 use crate::browser::{Browser, BrowserConfig};
 use crate::cdp::client::CdpClient;
-use crate::cdp::commands::{CdpCommand, CdpEvent};
-use crate::signer::{extract_wss, TabSession};
-use crate::SignedWssMaterial;
+use crate::cdp::commands::{CdpCommand, CdpEvent, NetworkGetAllCookiesResult};
+use crate::signer::{extract_signed_material, TabSession};
+use crate::{SignedMaterial};
 
 #[derive(Debug, Clone)]
 pub struct BrowserPoolConfig {
@@ -26,6 +27,8 @@ pub struct BrowserPoolConfig {
     pub user_data_dir_template: String,
     pub extra_args: Vec<String>,
     pub cdp_port_base: u16,
+    /// Auth cookies to inject before signing (name → value, e.g. ttwid, sessionid)
+    pub auth_cookies: HashMap<String, String>,
 }
 
 impl Default for BrowserPoolConfig {
@@ -41,6 +44,7 @@ impl Default for BrowserPoolConfig {
             user_data_dir_template: "./data/browser-{id}".into(),
             extra_args: vec![],
             cdp_port_base: 9222,
+            auth_cookies: HashMap::new(),
         }
     }
 }
@@ -61,9 +65,9 @@ impl PoolError {
         matches!(self, PoolError::Sign(msg) if msg.contains("timed out"))
     }
 
-    /// Returns true if the page navigated but no WSS push URL was captured.
-    pub fn is_no_wss_captured(&self) -> bool {
-        matches!(self, PoolError::Sign(msg) if msg.contains("NoWssCaptured"))
+    /// Returns true if the page navigated but no signed endpoint was captured.
+    pub fn is_no_signed_endpoint_captured(&self) -> bool {
+        matches!(self, PoolError::Sign(msg) if msg.contains("NoSignedEndpointCaptured"))
     }
 }
 
@@ -99,11 +103,13 @@ pub struct BrowserPool {
     pub(crate) browsers: Vec<BrowserHandle>,
     next_index: AtomicUsize,
     pub(crate) config: BrowserPoolConfig,
+    cookies: HashMap<String, String>,
 }
 
 impl BrowserPool {
     /// Spawn the pool and start health check loop.
-    pub async fn start(config: BrowserPoolConfig) -> Result<Self> {
+    /// Returns `Arc<Self>` so callers can share the pool across tasks/clones.
+    pub async fn start(config: BrowserPoolConfig) -> Result<Arc<Self>> {
         let mut browsers = Vec::with_capacity(config.pool_size);
         for i in 0..config.pool_size {
             let user_data_dir = config
@@ -135,25 +141,65 @@ impl BrowserPool {
             });
         }
 
-        let pool = Self {
+        let mut cookies = config.auth_cookies.clone();
+
+        // 如果配置里没有提供 ttwid/sessionid，让浏览器先访问一次抖音首页，
+        // 从浏览器 profile 中把登录态 cookie 捞出来。
+        if cookies.is_empty() {
+            if let Some(handle) = browsers.first() {
+                let cdp = handle.inner.cdp.read().await;
+                match warmup_auth_cookies(
+                    &cdp,
+                    std::time::Duration::from_secs(20),
+                )
+                .await
+                {
+                    Ok(warmed) if !warmed.is_empty() => {
+                        tracing::info!(
+                            cookie_names = ?warmed.keys().collect::<Vec<_>>(),
+                            "warmed auth cookies from browser"
+                        );
+                        cookies = warmed;
+                    }
+                    Ok(_) => {
+                        tracing::warn!(
+                            "browser warmup completed but no ttwid/sessionid cookie found"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to warm auth cookies from browser");
+                    }
+                }
+            }
+        }
+
+        let pool = Arc::new(Self {
             browsers,
             next_index: AtomicUsize::new(0),
             config,
-        };
+            cookies,
+        });
 
         // Start health check task
-        let pool_arc = Arc::new(pool);
-        let health_pool = pool_arc.clone();
+        let health_pool = pool.clone();
         tokio::spawn(async move {
             health_check_loop(health_pool).await;
         });
 
-        // Unwrap the Arc and return the pool
-        Arc::try_unwrap(pool_arc).map_err(|_| anyhow::anyhow!("pool has multiple references"))
+        Ok(pool)
     }
 
-    /// Sign a single web_rid. Round-robin across browsers.
-    pub async fn sign(&self, web_rid: &str) -> Result<SignedWssMaterial, PoolError> {
+    /// Sign a single web_rid using the pool's stored auth cookies. Round-robin across browsers.
+    pub async fn sign(&self, web_rid: &str) -> Result<SignedMaterial, PoolError> {
+        self.sign_with_cookies(web_rid, &self.cookies).await
+    }
+
+    /// Sign with explicit cookies (allows overriding pool's stored cookies).
+    pub async fn sign_with_cookies(
+        &self,
+        web_rid: &str,
+        cookies: &HashMap<String, String>,
+    ) -> Result<SignedMaterial, PoolError> {
         for _ in 0..self.browsers.len() {
             let idx = self.next_index.fetch_add(1, Ordering::Relaxed) % self.browsers.len();
             let handle = &self.browsers[idx];
@@ -163,7 +209,7 @@ impl BrowserPool {
                 Err(_) => continue,
             };
 
-            let result = self.sign_with_handle(handle, web_rid).await;
+            let result = self.sign_with_handle(handle, web_rid, cookies).await;
             drop(permit);
             return result;
         }
@@ -174,7 +220,8 @@ impl BrowserPool {
         &self,
         handle: &BrowserHandle,
         web_rid: &str,
-    ) -> Result<SignedWssMaterial, PoolError> {
+        cookies: &std::collections::HashMap<String, String>,
+    ) -> Result<SignedMaterial, PoolError> {
         *handle.inner.last_sign.lock().await = Some(Instant::now());
 
         // Hold a read lock on cdp for the entire signing workflow.
@@ -188,12 +235,13 @@ impl BrowserPool {
 
         let events = cdp.subscribe_session(&tab.session_id);
 
-        let result = extract_wss(
+        let result = extract_signed_material(
             &cdp,
             &tab.session_id,
             web_rid,
             self.config.sign_timeout,
             events,
+            cookies,
         )
         .await;
 
@@ -246,7 +294,7 @@ impl BrowserPool {
 }
 
 async fn acquire_tab(cdp: &CdpClient) -> Result<TabSession, crate::cdp::error::CdpError> {
-    use crate::cdp::commands::CreateTargetParams;
+    use crate::cdp::commands::{CreateTargetParams, AttachToTargetParams, AttachToTargetResult};
 
     let target: crate::cdp::commands::CreateTargetResult = cdp
         .send(
@@ -260,24 +308,23 @@ async fn acquire_tab(cdp: &CdpClient) -> Result<TabSession, crate::cdp::error::C
         )
         .await?;
 
-    // Subscribe to attachedToTarget
-    let mut events = cdp.subscribe_events();
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while Instant::now() < deadline {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        match tokio::time::timeout(remaining, events.recv()).await {
-            Ok(Ok(CdpEvent::AttachedToTarget { params })) => {
-                if params.target_info.target_id == target.target_id {
-                    return Ok(TabSession {
-                        target_id: target.target_id,
-                        session_id: params.session_id,
-                    });
-                }
-            }
-            _ => continue,
-        }
-    }
-    Err(crate::cdp::error::CdpError::Timeout(Duration::from_secs(3)))
+    let attach: AttachToTargetResult = cdp
+        .send(
+            |id| CdpCommand::AttachToTarget {
+                id,
+                params: AttachToTargetParams {
+                    target_id: target.target_id.clone(),
+                    flatten: Some(true),
+                },
+            },
+            Duration::from_secs(3),
+        )
+        .await?;
+
+    Ok(TabSession {
+        target_id: target.target_id,
+        session_id: attach.session_id,
+    })
 }
 
 async fn close_tab(cdp: &CdpClient, target_id: &str) -> Result<(), crate::cdp::error::CdpError> {
@@ -294,6 +341,95 @@ async fn close_tab(cdp: &CdpClient, target_id: &str) -> Result<(), crate::cdp::e
         )
         .await?;
     Ok(())
+}
+
+async fn warmup_auth_cookies(
+    cdp: &CdpClient,
+    timeout: Duration,
+) -> Result<HashMap<String, String>, crate::cdp::error::CdpError> {
+    use crate::cdp::commands::{NetworkGetCookiesParams, PageNavigateParams};
+
+    let tab = acquire_tab(cdp).await?;
+    let mut events = cdp.subscribe_session(&tab.session_id);
+
+    // Enable Page / Network on the warmup tab
+    cdp.send::<serde_json::Value>(
+        |id| CdpCommand::PageEnable {
+            id,
+            session_id: Some(tab.session_id.clone()),
+        },
+        Duration::from_secs(2),
+    )
+    .await?;
+
+    cdp.send::<serde_json::Value>(
+        |id| CdpCommand::NetworkEnable {
+            id,
+            session_id: Some(tab.session_id.clone()),
+        },
+        Duration::from_secs(2),
+    )
+    .await?;
+
+    // Navigate to Douyin landing page; this triggers ttwid/sessionid generation.
+    cdp.send::<serde_json::Value>(
+        |id| CdpCommand::PageNavigate {
+            id,
+            session_id: Some(tab.session_id.clone()),
+            params: PageNavigateParams {
+                url: "https://www.douyin.com".into(),
+                referrer: Some("https://www.douyin.com/".into()),
+            },
+        },
+        Duration::from_secs(5),
+    )
+    .await?;
+
+    // Wait for the page load event (or until timeout).
+    let _ = tokio::time::timeout(timeout, async {
+        while let Ok(evt) = events.recv().await {
+            if matches!(evt, CdpEvent::LoadEventFired { .. }) {
+                break;
+            }
+        }
+    })
+    .await;
+
+    // Pull cookies relevant to Douyin domains from the current session.
+    let result: NetworkGetAllCookiesResult = cdp
+        .send(
+            |id| CdpCommand::NetworkGetCookies {
+                id,
+                session_id: Some(tab.session_id.clone()),
+                params: NetworkGetCookiesParams {
+                    urls: vec![
+                        "https://www.douyin.com".into(),
+                        "https://live.douyin.com".into(),
+                    ],
+                },
+            },
+            Duration::from_secs(5),
+        )
+        .await?;
+
+    let mut cookies = HashMap::new();
+    for cookie in result.cookies {
+        let domain_ok = cookie.domain == ".douyin.com"
+            || cookie.domain == "douyin.com"
+            || cookie.domain.ends_with(".douyin.com");
+        if domain_ok && (cookie.name == "ttwid" || cookie.name == "sessionid") {
+            tracing::debug!(
+                name = %cookie.name,
+                domain = %cookie.domain,
+                "found auth cookie from browser warmup"
+            );
+            cookies.insert(cookie.name, cookie.value);
+        }
+    }
+
+    // Best-effort cleanup.
+    let _ = close_tab(cdp, &tab.target_id).await;
+    Ok(cookies)
 }
 
 async fn health_check_loop(pool: Arc<BrowserPool>) {

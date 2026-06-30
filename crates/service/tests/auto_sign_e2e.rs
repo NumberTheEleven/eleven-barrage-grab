@@ -30,7 +30,6 @@ async fn provide_signed_wss_e2e_returns_material() {
     };
 
     let pool = BrowserPool::start(config).await.expect("start browser pool");
-    let pool = Arc::new(pool);
 
     // Start gRPC server
     let grpc_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -4,10 +4,12 @@
 //! - `start` (默认) — 启动 service（沿用 custom-barrage 行为）
 //! - `grab` — 自动签名模式：用户提供 URL，服务自动完成签名并连接 WSS（R-007 / R-005）
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use futures::{SinkExt, StreamExt};
 use tracing::{error, info};
@@ -44,6 +46,10 @@ enum EbgCommand {
         #[arg(long)]
         url: String,
 
+        /// 配置文件路径（HTTP fetch 模式下需要 [browser] / [auth] 配置）
+        #[arg(long)]
+        config: Option<PathBuf>,
+
         /// cookie 文件路径（覆盖 config.toml 中的 [auth] 段）
         #[arg(long)]
         cookie_file: Option<PathBuf>,
@@ -79,10 +85,17 @@ async fn main() -> ExitCode {
         },
         Some(EbgCommand::Grab {
             url,
+            config,
             cookie_file,
             grpc_addr,
             verbose,
-        }) => match run_grab(&url, cookie_file.as_ref(), &grpc_addr, verbose).await {
+        }) => match run_grab(&url,
+            config.as_ref(),
+            cookie_file.as_ref(),
+            &grpc_addr,
+            verbose,
+        )
+        .await {
             Ok(_) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("Error: signature error");
@@ -95,27 +108,41 @@ async fn main() -> ExitCode {
     }
 }
 
-/// ebg grab 实现：调 gRPC ProvideSignedWss，然后连接 WSS 并输出弹幕
+/// ebg grab 实现：调 gRPC ProvideSignedWss，然后连接 WSS 或启动 FetchConsumer 输出弹幕
 async fn run_grab(
     url: &str,
+    config_path: Option<&PathBuf>,
     cookie_file: Option<&PathBuf>,
     grpc_addr: &str,
     verbose: bool,
 ) -> Result<(), eleven_barrage_collector::SignatureError> {
     // 1. URL 解析（本地快速失败）
-    let _web_rid = eleven_barrage_collector::parse_url(url)?;
-    info!(web_rid = %_web_rid, "URL parsed");
+    let web_rid = eleven_barrage_collector::parse_url(url)?;
+    info!(web_rid = %web_rid, "URL parsed");
 
     // 2. 调 gRPC ProvideSignedWss
     let material = call_provide_signed_wss(grpc_addr, url, cookie_file).await?;
 
-    info!(wss_url = %material.url, "signed wss material received");
+    info!(kind = ?material.kind(), url = %material.url(), "signed material received");
 
-    // 3. 连接 WSS 并输出弹幕
-    if let Err(e) = connect_and_print(&material, verbose).await {
-        return Err(eleven_barrage_collector::SignatureError::NetworkTransient {
-            reason: format!("wss connection failed: {}", e),
-        });
+    // 3. 根据端点类型消费弹幕
+    match material.kind() {
+        eleven_barrage_collector::SignedMaterialKind::Wss => {
+            if let Err(e) = connect_and_print(&material, verbose).await {
+                return Err(eleven_barrage_collector::SignatureError::NetworkTransient {
+                    reason: format!("wss connection failed: {}", e),
+                });
+            }
+        }
+        eleven_barrage_collector::SignedMaterialKind::HttpFetch => {
+            if let Err(e) = run_fetch_consumer_and_print(&material, config_path, &web_rid, verbose)
+                .await
+            {
+                return Err(eleven_barrage_collector::SignatureError::NetworkTransient {
+                    reason: format!("fetch consumer failed: {}", e),
+                });
+            }
+        }
     }
 
     Ok(())
@@ -144,7 +171,7 @@ async fn call_provide_signed_wss(
     grpc_addr: &str,
     url: &str,
     _cookie_file: Option<&PathBuf>,
-) -> Result<eleven_barrage_collector::SignedWssMaterial, eleven_barrage_collector::SignatureError> {
+) -> Result<eleven_barrage_collector::SignedMaterial, eleven_barrage_collector::SignatureError> {
     use eleven_barrage_service::signed_proto::signed_barrage_service_client::SignedBarrageServiceClient;
     use eleven_barrage_service::signed_proto::ProvideSignedWssRequest;
 
@@ -174,12 +201,28 @@ async fn call_provide_signed_wss(
     match inner.result {
         Some(
             eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Material(m),
-        ) => Ok(eleven_barrage_collector::SignedWssMaterial {
-            url: m.url,
-            headers: m.headers.into_iter().collect(),
-            expires_at: std::time::SystemTime::UNIX_EPOCH
-                + Duration::from_secs(m.expires_at_unix as u64),
-        }),
+        ) => {
+            let kind = match m.kind {
+                k if k == eleven_barrage_service::signed_proto::MaterialKind::HttpFetch as i32 => {
+                    eleven_barrage_collector::SignedMaterialKind::HttpFetch
+                }
+                _ => eleven_barrage_collector::SignedMaterialKind::Wss,
+            };
+            let base = eleven_barrage_collector::SignedWssMaterial {
+                url: m.url,
+                headers: m.headers.into_iter().collect(),
+                expires_at: std::time::SystemTime::UNIX_EPOCH
+                    + Duration::from_secs(m.expires_at_unix as u64),
+            };
+            Ok(match kind {
+                eleven_barrage_collector::SignedMaterialKind::Wss => {
+                    eleven_barrage_collector::SignedMaterial::Wss(base)
+                }
+                eleven_barrage_collector::SignedMaterialKind::HttpFetch => {
+                    eleven_barrage_collector::SignedMaterial::HttpFetch(base)
+                }
+            })
+        }
         Some(eleven_barrage_service::signed_proto::provide_signed_wss_response::Result::Error(
             err,
         )) => Err(map_proto_error(err)),
@@ -215,13 +258,13 @@ fn map_proto_error(
 
 /// 用签名后的 material 连接 WSS，并打印弹幕事件
 async fn connect_and_print(
-    material: &eleven_barrage_collector::SignedWssMaterial,
+    material: &eleven_barrage_collector::SignedMaterial,
     verbose: bool,
 ) -> anyhow::Result<()> {
     use tokio_tungstenite::tungstenite::http::Request;
 
-    let mut request_builder = Request::builder().method("GET").uri(&material.url);
-    for (key, value) in &material.headers {
+    let mut request_builder = Request::builder().method("GET").uri(material.url());
+    for (key, value) in material.headers() {
         request_builder = request_builder.header(key.as_str(), value.as_str());
     }
     let request = request_builder.body(()).expect("build wss request");
@@ -266,6 +309,81 @@ async fn connect_and_print(
             }
             _ => {}
         }
+    }
+
+    Ok(())
+}
+
+/// 启动 FetchConsumer 并打印弹幕事件（HTTP fetch 路径）
+async fn run_fetch_consumer_and_print(
+    material: &eleven_barrage_collector::SignedMaterial,
+    config_path: Option<&PathBuf>,
+    web_rid: &str,
+    verbose: bool,
+) -> anyhow::Result<()> {
+    use eleven_barrage_core::BarrageEvent;
+
+    // 加载配置以获取浏览器路径与 auth cookie
+    let mut config = if let Some(path) = config_path {
+        eleven_barrage_service::config::AppConfig::from_file(path)
+            .context("load config file")?
+    } else {
+        eleven_barrage_service::config::AppConfig::load_or_default()
+    };
+    config.apply_env_overrides();
+    config
+        .validate()
+        .context("configuration validation failed")?;
+
+    let mut auth_cookies = HashMap::new();
+    if !config.auth.ttwid.is_empty() {
+        auth_cookies.insert("ttwid".to_string(), config.auth.ttwid.clone());
+    }
+    if !config.auth.sessionid.is_empty() {
+        auth_cookies.insert("sessionid".to_string(), config.auth.sessionid.clone());
+    }
+    if auth_cookies.is_empty() {
+        anyhow::bail!("auth.ttwid or auth.sessionid is required for HTTP fetch mode");
+    }
+
+    let user_data_dir = config
+        .browser
+        .user_data_dir_template
+        .replace("{id}", "fetch-consumer");
+    let cdp_port = config.browser.cdp_port_base.saturating_add(100);
+
+    let fetch_config = eleven_barrage_collector::fetch_consumer::FetchConsumerConfig {
+        edge_path: config.browser.edge_path.clone(),
+        user_data_dir: PathBuf::from(user_data_dir),
+        cdp_port,
+        extra_args: config.browser.extra_args.clone(),
+        web_rid: web_rid.to_string(),
+        auth_cookies,
+        keepalive_interval: Duration::from_secs(5),
+        navigation_timeout: Duration::from_secs(30),
+    };
+
+    info!(
+        url = %material.url(),
+        edge_path = %fetch_config.edge_path.display(),
+        "starting fetch consumer"
+    );
+
+    let filter = eleven_barrage_core::EventFilter::new(config.push_event_methods().to_vec());
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<BarrageEvent>(1024);
+    let consumer = eleven_barrage_collector::fetch_consumer::FetchConsumer::new(fetch_config);
+    let consumer_handle = tokio::spawn(async move { consumer.run(tx, filter).await });
+
+    while let Some(event) = rx.recv().await {
+        if verbose {
+            println!("{:#?}", event);
+        } else {
+            println!("{}: {}", event.method(), event.msg_id());
+        }
+    }
+
+    if let Err(e) = consumer_handle.await {
+        anyhow::bail!("fetch consumer task panicked: {}", e);
     }
 
     Ok(())

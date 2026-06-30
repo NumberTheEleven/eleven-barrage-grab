@@ -12,7 +12,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use eleven_barrage_collector::{parse_url, pool::PoolError, pool::BrowserPool, SignedWssMaterial};
+use eleven_barrage_collector::{parse_url, pool::PoolError, pool::BrowserPool, SignedMaterial, SignedMaterialKind};
 
 #[derive(Deserialize)]
 pub struct SignRequest {
@@ -21,26 +21,38 @@ pub struct SignRequest {
 
 #[derive(Serialize)]
 pub struct SignResponse {
+    /// 端点类型：`wss` 或 `http_fetch`
+    pub kind: String,
+    /// 签名后的端点 URL（WSS 或 HTTP fetch）
+    pub url: String,
+    /// 向后兼容的字段别名，等价于 `url`
     pub wss_url: String,
     pub headers: HashMap<String, String>,
     pub expires_at_unix: i64,
     pub captured_at_unix: i64,
 }
 
-impl From<SignedWssMaterial> for SignResponse {
-    fn from(m: SignedWssMaterial) -> Self {
+impl From<SignedMaterial> for SignResponse {
+    fn from(m: SignedMaterial) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
         let expires = m
-            .expires_at
+            .expires_at()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
+        let kind = match m.kind() {
+            SignedMaterialKind::Wss => "wss".to_string(),
+            SignedMaterialKind::HttpFetch => "http_fetch".to_string(),
+        };
+        let url = m.url().to_string();
         Self {
-            wss_url: m.url,
-            headers: m.headers,
+            kind,
+            url: url.clone(),
+            wss_url: url,
+            headers: m.headers().clone(),
             expires_at_unix: expires,
             captured_at_unix: now,
         }
@@ -54,7 +66,7 @@ pub enum ApiError {
     PoolBusy,
     BrowserDead,
     WssTimeout,
-    NoWssCaptured,
+    NoSignedEndpointCaptured,
     SignFailed(String),
     Internal(String),
 }
@@ -80,11 +92,11 @@ impl IntoResponse for ApiError {
                 StatusCode::BAD_GATEWAY,
                 "WSS_TIMEOUT",
                 true,
-                "timeout waiting for WSS request".into(),
+                "timeout waiting for signed endpoint".into(),
             ),
-            ApiError::NoWssCaptured => (
+            ApiError::NoSignedEndpointCaptured => (
                 StatusCode::BAD_GATEWAY,
-                "NO_WSS_CAPTURED",
+                "NO_SIGNED_ENDPOINT_CAPTURED",
                 false,
                 "room may not exist or be offline".into(),
             ),
@@ -109,8 +121,8 @@ pub async fn sign(
         if e.is_timeout() {
             return ApiError::WssTimeout;
         }
-        if e.is_no_wss_captured() {
-            return ApiError::NoWssCaptured;
+        if e.is_no_signed_endpoint_captured() {
+            return ApiError::NoSignedEndpointCaptured;
         }
         match e {
             PoolError::Busy => ApiError::PoolBusy,
@@ -129,13 +141,17 @@ mod tests {
     #[test]
     fn sign_response_serializes_expected_fields() {
         let resp = SignResponse {
-            wss_url: "wss://x".into(),
+            kind: "http_fetch".into(),
+            url: "https://live.douyin.com/webcast/im/fetch/?x=1".into(),
+            wss_url: "https://live.douyin.com/webcast/im/fetch/?x=1".into(),
             headers: [("Cookie".into(), "ttwid=y".into())].into_iter().collect(),
             expires_at_unix: 1000,
             captured_at_unix: 500,
         };
         let json = serde_json::to_value(&resp).unwrap();
-        assert_eq!(json["wss_url"], "wss://x");
+        assert_eq!(json["kind"], "http_fetch");
+        assert_eq!(json["url"], "https://live.douyin.com/webcast/im/fetch/?x=1");
+        assert_eq!(json["wss_url"], "https://live.douyin.com/webcast/im/fetch/?x=1");
         assert_eq!(json["expires_at_unix"], 1000);
         assert_eq!(json["headers"]["Cookie"], "ttwid=y");
     }

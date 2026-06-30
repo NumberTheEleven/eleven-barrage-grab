@@ -24,6 +24,16 @@ impl Dispatcher {
         Self
     }
 
+    /// 将裸 `Response` 消息列表转换为 `BarrageEvent`（HTTP fetch 路径使用）。
+    ///
+    /// 内部等价于 `dispatch(&WssResponse::default(), response)`。
+    pub fn dispatch_response(
+        &self,
+        response: &Response,
+    ) -> CoreResult<Vec<BarrageEvent>> {
+        self.dispatch(&WssResponse::default(), response)
+    }
+
     /// 将 `Response.messages` 中的每条 `Message` 转换为 `BarrageEvent`
     ///
     /// # 参数

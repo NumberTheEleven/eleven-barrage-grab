@@ -72,11 +72,17 @@ impl CdpTransport for MockCdpClient {
     ) -> Result<R> {
         let method = match &cmd {
             CdpCommand::SetDiscoverTargets { .. } => "Target.setDiscoverTargets",
+            CdpCommand::SetAutoAttach { .. } => "Target.setAutoAttach",
             CdpCommand::CreateTarget { .. } => "Target.createTarget",
+            CdpCommand::AttachToTarget { .. } => "Target.attachToTarget",
             CdpCommand::CloseTarget { .. } => "Target.closeTarget",
             CdpCommand::PageEnable { .. } => "Page.enable",
             CdpCommand::PageNavigate { .. } => "Page.navigate",
             CdpCommand::NetworkEnable { .. } => "Network.enable",
+            CdpCommand::NetworkSetCookie { .. } => "Network.setCookie",
+            CdpCommand::NetworkGetAllCookies { .. } => "Network.getAllCookies",
+            CdpCommand::NetworkGetCookies { .. } => "Network.getCookies",
+            CdpCommand::NetworkGetResponseBody { .. } => "Network.getResponseBody",
             CdpCommand::NetworkDisable { .. } => "Network.disable",
             CdpCommand::RuntimeEvaluate { .. } => "Runtime.evaluate",
             CdpCommand::GetVersion { .. } => "Browser.getVersion",

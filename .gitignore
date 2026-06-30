@@ -27,6 +27,11 @@ logs/
 .env
 .env.local
 config.local.toml
+config-test-*.toml
+sign-result.json
+
+# Fetch consumer runtime data
+data/
 
 # Test fixtures (large binary recordings)
 tests/fixtures/*.bin

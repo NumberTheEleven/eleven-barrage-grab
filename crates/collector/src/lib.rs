@@ -30,6 +30,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
 
+/// 签名材料类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignedMaterialKind {
+    /// WSS push 端点
+    Wss,
+    /// HTTP fetch fallback 端点
+    HttpFetch,
+}
+
 /// 已签名的 wss 连接材料（collector 产出，service 消费）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignedWssMaterial {
@@ -46,6 +56,61 @@ impl SignedWssMaterial {
     /// 检查材料是否过期
     pub fn is_expired(&self) -> bool {
         SystemTime::now() >= self.expires_at
+    }
+}
+
+/// 统一的签名端点材料（WSS push 或 HTTP fetch fallback）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SignedMaterial {
+    /// 抖音 WSS push 端点
+    Wss(SignedWssMaterial),
+    /// 抖音 HTTP fetch fallback 端点
+    HttpFetch(SignedWssMaterial),
+}
+
+impl SignedMaterial {
+    /// 返回材料类型
+    pub fn kind(&self) -> SignedMaterialKind {
+        match self {
+            SignedMaterial::Wss(_) => SignedMaterialKind::Wss,
+            SignedMaterial::HttpFetch(_) => SignedMaterialKind::HttpFetch,
+        }
+    }
+
+    /// 返回端点 URL
+    pub fn url(&self) -> &str {
+        match self {
+            SignedMaterial::Wss(m) => &m.url,
+            SignedMaterial::HttpFetch(m) => &m.url,
+        }
+    }
+
+    /// 返回请求头
+    pub fn headers(&self) -> &HashMap<String, String> {
+        match self {
+            SignedMaterial::Wss(m) => &m.headers,
+            SignedMaterial::HttpFetch(m) => &m.headers,
+        }
+    }
+
+    /// 返回过期时间
+    pub fn expires_at(&self) -> SystemTime {
+        match self {
+            SignedMaterial::Wss(m) => m.expires_at,
+            SignedMaterial::HttpFetch(m) => m.expires_at,
+        }
+    }
+
+    /// 检查材料是否过期
+    pub fn is_expired(&self) -> bool {
+        SystemTime::now() >= self.expires_at()
+    }
+}
+
+impl From<SignedWssMaterial> for SignedMaterial {
+    fn from(m: SignedWssMaterial) -> Self {
+        SignedMaterial::Wss(m)
     }
 }
 
@@ -81,12 +146,13 @@ pub mod cdp;
 pub mod browser;
 pub mod pool;
 pub mod signer;
+pub mod fetch_consumer;
 
 /// Collector trait — MVP 仅占位
 #[async_trait::async_trait]
 pub trait Collector: Send + Sync {
-    /// 提取已签名的 wss 材料
-    async fn extract(&self, room_id: &str) -> anyhow::Result<SignedWssMaterial>;
+    /// 提取已签名的端点材料
+    async fn extract(&self, room_id: &str) -> anyhow::Result<SignedMaterial>;
 }
 
 /// 默认 collector（MVP 占位实现）
@@ -94,7 +160,7 @@ pub struct DefaultCollector;
 
 #[async_trait::async_trait]
 impl Collector for DefaultCollector {
-    async fn extract(&self, _room_id: &str) -> anyhow::Result<SignedWssMaterial> {
+    async fn extract(&self, _room_id: &str) -> anyhow::Result<SignedMaterial> {
         anyhow::bail!(
             "collector is not implemented yet. \
              see devflow/custom-barrage/requirements.md (R-011, R-012) for the design. \
@@ -125,6 +191,24 @@ mod tests {
             parsed.headers.get("Cookie"),
             Some(&"ttwid=test".to_string())
         );
+    }
+
+    #[test]
+    fn signed_material_enum_roundtrip() {
+        let material = SignedMaterial::HttpFetch(SignedWssMaterial {
+            url: "https://live.douyin.com/webcast/im/fetch/?room_id=test".to_string(),
+            headers: [("Cookie".to_string(), "ttwid=test".to_string())]
+                .into_iter()
+                .collect(),
+            expires_at: SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(3600),
+        });
+
+        let json = serde_json::to_string(&material).unwrap();
+        let parsed: SignedMaterial = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.kind(), SignedMaterialKind::HttpFetch);
+        assert_eq!(parsed.url(), material.url());
+        assert_eq!(parsed.headers().get("Cookie"), Some(&"ttwid=test".to_string()));
     }
 
     #[tokio::test]

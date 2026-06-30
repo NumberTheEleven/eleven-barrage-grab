@@ -22,7 +22,7 @@ use std::fmt;
 /// 统一签名错误
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignatureError {
-    /// URL 格式不支持（仅 live.douyin.com 可接受）
+    /// URL 格式不支持（仅 `live.douyin.com` 或 `www.douyin.com/root/live` 可接受）
     UrlFormatNotSupported { url: String },
 
     /// URL 为空字符串
@@ -50,7 +50,7 @@ impl fmt::Display for SignatureError {
             Self::UrlFormatNotSupported { url } => {
                 write!(
                     f,
-                    "URL format not supported: {} (only live.douyin.com is accepted)",
+                    "URL format not supported: {} (only live.douyin.com or www.douyin.com/root/live is accepted)",
                     url
                 )
             }

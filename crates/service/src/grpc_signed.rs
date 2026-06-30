@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use eleven_barrage_collector::pool::{BrowserPool, PoolError};
-use eleven_barrage_collector::{parse_url, SignatureError};
+use eleven_barrage_collector::{parse_url, SignedMaterial, SignedMaterialKind, SignatureError};
 use tonic::{Request, Response, Status};
 use tracing::{info, warn};
 
@@ -159,18 +159,24 @@ fn to_error_info(err: &SignatureError) -> SignatureErrorInfo {
     }
 }
 
-/// SignedWssMaterial → proto (with expires_at unix conversion)
-fn to_grpc_material(material: eleven_barrage_collector::SignedWssMaterial) -> SignedWssMaterial {
+/// SignedMaterial → proto (with expires_at unix conversion + kind)
+fn to_grpc_material(material: SignedMaterial) -> SignedWssMaterial {
     let expires_at_unix = material
-        .expires_at
+        .expires_at()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
+    let kind = match material.kind() {
+        SignedMaterialKind::Wss => self::signed_proto::MaterialKind::Wss as i32,
+        SignedMaterialKind::HttpFetch => self::signed_proto::MaterialKind::HttpFetch as i32,
+    };
+
     SignedWssMaterial {
-        url: material.url,
-        headers: material.headers.into_iter().collect::<HashMap<_, _>>(),
+        url: material.url().to_string(),
+        headers: material.headers().clone().into_iter().collect::<HashMap<_, _>>(),
         expires_at_unix,
+        kind,
     }
 }
 
@@ -206,14 +212,27 @@ mod tests {
     #[test]
     fn to_grpc_material_converts_expires_at() {
         use std::time::SystemTime;
-        let material = eleven_barrage_collector::SignedWssMaterial {
+        let material = SignedMaterial::Wss(eleven_barrage_collector::SignedWssMaterial {
             url: "wss://example.com".to_string(),
             headers: HashMap::new(),
             expires_at: SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1700000000),
-        };
+        });
         let grpc = to_grpc_material(material);
         assert_eq!(grpc.url, "wss://example.com");
         assert_eq!(grpc.expires_at_unix, 1700000000);
+        assert_eq!(grpc.kind, self::signed_proto::MaterialKind::Wss as i32);
+    }
+
+    #[test]
+    fn to_grpc_material_http_fetch_kind() {
+        use std::time::SystemTime;
+        let material = SignedMaterial::HttpFetch(eleven_barrage_collector::SignedWssMaterial {
+            url: "https://live.douyin.com/webcast/im/fetch/?x=1".to_string(),
+            headers: HashMap::new(),
+            expires_at: SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1700000000),
+        });
+        let grpc = to_grpc_material(material);
+        assert_eq!(grpc.kind, self::signed_proto::MaterialKind::HttpFetch as i32);
     }
 
     #[test]

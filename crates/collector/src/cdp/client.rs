@@ -26,12 +26,13 @@ type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type WsSink = futures_util::stream::SplitSink<WsStream, Message>;
 type WsRead = futures_util::stream::SplitStream<WsStream>;
 
+#[derive(Clone)]
 pub struct CdpClient {
-    write: Mutex<WsSink>,
+    write: Arc<Mutex<WsSink>>,
     pending: Arc<Mutex<HashMap<i64, oneshot::Sender<CdpResponse>>>>,
     event_tx: broadcast::Sender<CdpEvent>,
-    next_id: AtomicI64,
-    _read_task: JoinHandle<()>,
+    next_id: Arc<AtomicI64>,
+    _read_task: Arc<JoinHandle<()>>,
 }
 
 impl CdpClient {
@@ -53,11 +54,11 @@ impl CdpClient {
 
         Ok((
             Self {
-                write: Mutex::new(write),
+                write: Arc::new(Mutex::new(write)),
                 pending,
                 event_tx: event_tx.clone(),
-                next_id: AtomicI64::new(1),
-                _read_task: read_task,
+                next_id: Arc::new(AtomicI64::new(1)),
+                _read_task: Arc::new(read_task),
             },
             event_tx.subscribe(),
         ))
@@ -101,11 +102,17 @@ impl CdpTransport for CdpClient {
         // Do NOT re-assign here — that would orphan the pending waiter for the original id.
         let id = match &cmd {
             CdpCommand::SetDiscoverTargets { id, .. }
+            | CdpCommand::SetAutoAttach { id, .. }
             | CdpCommand::CreateTarget { id, .. }
+            | CdpCommand::AttachToTarget { id, .. }
             | CdpCommand::CloseTarget { id, .. }
             | CdpCommand::PageEnable { id, .. }
             | CdpCommand::PageNavigate { id, .. }
             | CdpCommand::NetworkEnable { id, .. }
+            | CdpCommand::NetworkSetCookie { id, .. }
+            | CdpCommand::NetworkGetAllCookies { id }
+            | CdpCommand::NetworkGetCookies { id, .. }
+            | CdpCommand::NetworkGetResponseBody { id, .. }
             | CdpCommand::NetworkDisable { id, .. }
             | CdpCommand::RuntimeEvaluate { id, .. }
             | CdpCommand::GetVersion { id } => *id,
@@ -120,7 +127,8 @@ impl CdpTransport for CdpClient {
 
         {
             let mut write = self.write.lock().await;
-            write.send(Message::Binary(payload)).await.map_err(CdpError::WebSocket)?;
+            let text = String::from_utf8(payload).expect("CDP payload is always valid UTF-8 JSON");
+            write.send(Message::Text(text)).await.map_err(CdpError::WebSocket)?;
         }
 
         let resp = tokio::time::timeout(timeout, rx)
